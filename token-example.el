@@ -20,23 +20,24 @@
 ;; run the parser interactively giving it: simple-kv when prompted for
 ;; a parser.
 
-(parser-define 'simple-kv
-  ;; ^^ bind the compiled function to a symbol
-  (parser-compile
-    ;; ^^ emits a parser function that takes a single argument (starting position)
+(parser-define
+ 'simple-kv
+ ;; ^^ bind the compiled function to a symbol
+ (parser-compile
+  ;; ^^ emits a parser function that takes a single argument (starting position)
 
-    (define
-      ;; ^^ I want to declare some stuff without causing matching [ you can declare and match at the
-      ;;    same time ; define can go anywhere any number of times except inside tokens which is nuts. ]
+  (define
+    ;; ^^ I want to declare some stuff without causing matching [ you can declare and match at the
+    ;;    same time ; define can go anywhere any number of times except inside tokens which is nuts. ]
 
-      (/token record-delim       "$" null) ;; our record separator is newline. the "null" means
-                                           ;; don't put anything in AST for this token.
+    (/token record-delim       "$" null) ;; our record separator is newline. the "null" means
+    ;; don't put anything in AST for this token.
 
-      (/token kv-pair  "\\([^[:blank:]]+\\):[[:space:]]+\\([^[:blank:][:cntrl:]]+\\)"
-      ;;      ^^ identifier  ^^ first capture              ^^ second capture
+    (/token kv-pair  "\\([^[:blank:]]+\\):[[:space:]]+\\([^[:blank:][:cntrl:]]+\\)"
+            ;;      ^^ identifier  ^^ first capture              ^^ second capture
 
-        (1 2)       parser-token-string)
-      ;; ^^ select  ^^ handler
+            (1 2)       parser-token-string)
+    ;; ^^ select  ^^ handler
 
     ;; when I walk through the AST I can find a kv-pair because it will produce a cons of
     ;; ( identifier . data ) where identifier is a symbol you can check with eq.
@@ -72,21 +73,21 @@
     ;; of cons cells.
 
     ;; do a find-function lookup of parser-token-string as an example.
-      )
+    )
 
-    /and
-    ;; ^^ and/or are conceptually just like the lisp and/or special forms. The start
-    ;;    symbol has a special default of "or" so that simple tables of tokens are
-    ;;    easy to make: this is perl'ish.
+  /and
+  ;; ^^ and/or are conceptually just like the lisp and/or special forms. The start
+  ;;    symbol has a special default of "or" so that simple tables of tokens are
+  ;;    easy to make: this is perl'ish.
 
-    ;;    my /and will replace the default or.
+  ;;    my /and will replace the default or.
 
-    ;;    The normal [not start symbol or top-level] default is /and which produces
-    ;;    the sequence of matches you would expect.
+  ;;    The normal [not start symbol or top-level] default is /and which produces
+  ;;    the sequence of matches you would expect.
 
-    kv-pair record-delim
-    ;; ^^ call my terms, by the Term Relation /and both must match.
-    ))
+  kv-pair record-delim
+  ;; ^^ call my terms, by the Term Relation /and both must match.
+  ))
 
 ;; okay so if I have the input like this:
 

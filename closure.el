@@ -19,10 +19,10 @@
 
 (defmacro closure-define ( symbol &rest definitions )
   (set symbol
-    (mapcar
-      (lambda ( def )
-        (cons (car def) (cadr def)))
-      definitions))
+       (mapcar
+        (lambda ( def )
+          (cons (car def) (cadr def)))
+        definitions))
   symbol)
 
 (defvar closure-objarray-bucket-tuning 13
@@ -31,19 +31,19 @@
 (defun closure-copy ( closure )
   "copy CLOSURE an objarray so that the values are not shared unlike copy-sequence."
   (lexical-let
-    ((copy (make-vector closure-objarray-bucket-tuning 0)))
+      ((copy (make-vector closure-objarray-bucket-tuning 0)))
 
     (mapatoms
-      (lambda ( s )
-        (lexical-let
-          ((name (symbol-name s)))
-          (set (intern name copy) (symbol-value (intern name closure))))) closure)
+     (lambda ( s )
+       (lexical-let
+           ((name (symbol-name s)))
+         (set (intern name copy) (symbol-value (intern name closure))))) closure)
     copy))
 
 (defun closure-create ( definition )
   "create a symbol table initializing SYMBOL with eval'd VALUE"
   (lexical-let
-    ((table (make-vector closure-objarray-bucket-tuning 0)))
+      ((table (make-vector closure-objarray-bucket-tuning 0)))
 
     (mapc (lambda ( pair )
             (set (intern (symbol-name (car pair)) table) (eval (cdr pair)))) definition)
@@ -57,20 +57,20 @@
   "traverse the tree depth first pre-binding any symbol found in closure."
   ;; might be better to just use a cl low level library function.
   (if (consp body)
-    (lexical-let
-      ((atom (car body)))
+      (lexical-let
+          ((atom (car body)))
 
-      (cons
-        (if (listp atom)
-          (closure-bind-scope closure atom)
+        (cons
+         (if (listp atom)
+             (closure-bind-scope closure atom)
 
-          (if (symbolp atom)
-            (or
-              (intern-soft (symbol-name atom) closure)
-              atom)
-            atom))
+           (if (symbolp atom)
+               (or
+                (intern-soft (symbol-name atom) closure)
+                atom)
+             atom))
 
-        (closure-bind-scope closure (cdr body))))
+         (closure-bind-scope closure (cdr body))))
     body))
 
 (defmacro save-lexical-closure ( closure &rest body )
@@ -84,7 +84,7 @@
    of a recursive pre-bind in addition to eval each time evaluated."
   (declare (debug (symbolp body)))
   `(eval (closure-bind-scope ,closure ',(if (eq 'lambda (car body))
-                                          body
+                                            body
                                           (cons 'progn body)))))
 
 (defun closure-let-binding ( s closure )
@@ -94,17 +94,17 @@
   "use a saved closure as a dynamic scope with private copy."
   (declare (debug (form body)))
   (lexical-let
-    ((definition    (eval (car with-def)))
-     (closure       (eval (cadr with-def)))
-     (bindings      nil))
+      ((definition    (eval (car with-def)))
+       (closure       (eval (cadr with-def)))
+       (bindings      nil))
 
     `(let
-       ,(progn
-          (mapc
-            (lambda ( def )
-              (push (closure-let-binding (car def) closure) bindings))
-            definition)
-          bindings)
+         ,(progn
+            (mapc
+             (lambda ( def )
+               (push (closure-let-binding (car def) closure) bindings))
+             definition)
+            bindings)
        ,@body)))
 
 (defmacro use-dynamic-closure-with ( with-def let-spec &rest body )
@@ -112,19 +112,19 @@
   (declare (debug (form form body)))
 
   (lexical-let
-    ((definition    (eval (car with-def)))
-     (closure       (eval (cadr with-def)))
-     (bindings      nil))
+      ((definition    (eval (car with-def)))
+       (closure       (eval (cadr with-def)))
+       (bindings      nil))
 
     `(let
-       ,(progn
-          (mapc
-            (lambda ( def )
-              (push (closure-let-binding (car def) closure) bindings))
-            definition)
-          (append
-            let-spec
-            bindings))
+         ,(progn
+            (mapc
+             (lambda ( def )
+               (push (closure-let-binding (car def) closure) bindings))
+             definition)
+            (append
+             let-spec
+             bindings))
        ,@body)))
 
 ;;----------------------------------------------------------------------
@@ -152,30 +152,30 @@
 (defun pp-closure ( closure )
   "pretty print a closure returning a string."
   (lexical-let
-    ((strings nil))
+      ((strings nil))
 
     (mapatoms
-      (lambda ( s )
-        (push (format "symbol: %s = %s\n"
-                (symbol-name s)
-                (pp-to-string (symbol-value (intern (symbol-name s) closure)))) strings)) closure)
+     (lambda ( s )
+       (push (format "symbol: %s = %s\n"
+                     (symbol-name s)
+                     (pp-to-string (symbol-value (intern (symbol-name s) closure)))) strings)) closure)
     (apply 'concat strings)))
 
 (defun pp-closure-filtered ( filter closure )
   "pretty print a closure returning a string with filtering."
   (lexical-let
-    ((strings nil))
+      ((strings nil))
 
     (mapatoms
-      (lambda ( s )
-        (lexical-let*
-          ((name (symbol-name s))
-           (value (symbol-value s)))
+     (lambda ( s )
+       (lexical-let*
+           ((name (symbol-name s))
+            (value (symbol-value s)))
 
-          (unless (funcall filter value)
-            (push (format "symbol: %s = %s\n"
-                    name
-                    (pp-to-string value)) strings)) )) closure)
+         (unless (funcall filter value)
+           (push (format "symbol: %s = %s\n"
+                         name
+                         (pp-to-string value)) strings)) )) closure)
     (apply 'concat strings)))
 
 (provide 'closure)

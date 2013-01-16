@@ -27,8 +27,8 @@
    and the cdr of x is a cons.
   "
   (and
-    (consp x)
-    (consp (cdr x))))
+   (consp x)
+   (consp (cdr x))))
 
 (defun consume-list ( list consume )
   "consume-list LIST CONSUME
@@ -60,15 +60,15 @@
    return a cons of LIST split into two lists at index N.
   "
   (if (> n 1)
-    (lexical-let
-      ((a-list list)
-        (b-list nil)
-        (before-split (apply-n-times 'cdr (- n 1) list)))
+      (lexical-let
+          ((a-list list)
+           (b-list nil)
+           (before-split (apply-n-times 'cdr (- n 1) list)))
 
-      (setq b-list (cdr before-split))
-      (setcdr before-split nil)
+        (setq b-list (cdr before-split))
+        (setcdr before-split nil)
 
-      (cons a-list b-list))
+        (cons a-list b-list))
     (cons (cons (car list) nil) (cdr list))))
 
 (defun or-fn-list ( list )
@@ -78,7 +78,7 @@
   (catch 'terminate
     (dolist (func list)
       (if (funcall func)
-        (throw 'terminate t)))
+          (throw 'terminate t)))
     nil))
 
 ;;----------------------------------------------------------------------
@@ -89,18 +89,18 @@
   (setcdr a b)
 
   (do ((x b))
-    ((null (cdr x)) x)
+      ((null (cdr x)) x)
     (setq x (cdr x))))
 
 (defun tail-iterator ( bind-to )
   (set bind-to (cons nil nil))
 
   (lexical-let
-    ((tail (symbol-value bind-to)))
+      ((tail (symbol-value bind-to)))
 
     (lambda ( x )
       (if (precise-list-p x)
-        (setq tail (tail-iterator-merge tail x))
+          (setq tail (tail-iterator-merge tail x))
         (progn
           (setcdr tail (cons x nil))
           (setq tail (cdr tail))) )) ))
@@ -124,8 +124,8 @@
    bind the function of a un-interned symbol named NAME to an evaluation
    of a SEXP."
   (let
-    ;; this would be cooler if it used one of the unique algorithms.
-    ((anon-func (make-symbol name)))
+      ;; this would be cooler if it used one of the unique algorithms.
+      ((anon-func (make-symbol name)))
     (fset anon-func (eval sexp))
     anon-func))
 
@@ -161,7 +161,7 @@ or macro with `&rest' args."
 
 (defun function-arity ( function )
   (if (subrp function)
-    (subr-arity function)
+      (subr-arity function)
     (lambda-arity function)))
 
 ;; define-error originated in XEmacs. This implementation shares the
@@ -172,7 +172,7 @@ or macro with `&rest' args."
   "define a error symbol with a isa list and a error message"
   `(progn
      (put ',symbol
-       'error-conditions (append '(error ,symbol) ',isa-list))
+          'error-conditions (append '(error ,symbol) ',isa-list))
      (put ',symbol 'error-message ,message) ))
 
 (provide 'parser-fn)
