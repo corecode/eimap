@@ -1564,9 +1564,9 @@ based upon the structure required.
          ((functionp selection) (progn
                                   (setq disable-action t)
                                   `(funcall ',selection (parser-token-capture 0))))
-         ((symbolp constructor) (progn
+         ((symbolp   selection) (progn
                                   (setq disable-action t)
-                                  `(quote ',constructor)))
+                                  `(quote ',selection)))
 
          ;; all other constructor types are un-handled.
          ((signal 'parser-syntactic-error
@@ -1995,7 +1995,7 @@ based upon the structure required.
       parser-binding)))
 
 (defun parser-extract-string ( region )
-  (filter-buffer-substring (car region) (cdr region) nil t))
+  (filter-buffer-substring (car region) (cdr region) nil))
 
 (defun parser-token-string ( capture )
   "parser-token-string CAPTURE
