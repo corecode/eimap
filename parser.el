@@ -1833,6 +1833,22 @@ based upon the structure required.
 
     (reverse (tail-list translation)) ))
 
+(defun parser-wrap-string (string)
+  "parser-wrap-string string
+
+Wrap the string \"string\" as
+  (/token unique-string \"string\" null)
+
+This is used as syntactic sugar, allowing the use of
+literal strings that only affect parsing, but do not
+appear in the AST."
+
+  (if (stringp string)
+      (lexical-let
+          ((sym (parser-unique-mf-symbol string)))
+        (list '/token sym string 'null))
+    string))
+
 (defun parser-nest-descent ( closure descent )
   (if descent
       (parser-compile-run closure
@@ -1887,6 +1903,11 @@ based upon the structure required.
 ;;;         (parser-compile-message "parser-translate-form" (format "c:n %s %s"
 ;;;                                                           (pp-to-string current)
 ;;;                                                           (pp-to-string next)))
+                    ;; syntactic sugar: allow "strings" to be
+                    ;; a short for (/token unique.. "strings" null)
+                    (if (stringp current)
+                        (setq current (parser-wrap-string current)))
+
                     (if (listp current)
                         (progn
                           (when call-to
