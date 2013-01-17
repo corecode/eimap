@@ -1580,8 +1580,10 @@ based upon the structure required.
 
 (defun parser-token-function ( id &rest syntax )
   "Generate a token Match Function lambda."
-  (lexical-let
-      ((generated
+  (lexical-let*
+      ((syntax (or syntax
+                   (list (regexp-quote (symbol-name id)))))
+       (generated
         `(lambda ()
            (when (looking-at ,(car syntax))
              (parser-result-token
