@@ -39,6 +39,8 @@
     (/token LPAREN "(" null)
     (/token RPAREN ")" null)
 
+    (/token NIL)
+
     (/token nz-number "[1-9][0-9]*" 0 eimap/parse-number)
     (/token number "[0-9]+" 0 eimap/parse-number)
 
@@ -55,7 +57,74 @@
 		 (/or (/token string- "[^\x00-\x1f\x7f){ %*\"\\]+"
 			      0 parser-token-string)
 		      string))
+    (/production nstring
+		 (/or string
+		      NIL))
+
     (/token text "[^\x0d\x0a]+" 0 parser-token-string)
+
+    (/token flag "\\\\?[^]\x00-\x1f\x7f){ %*\"\\]+" 0 parser-token-string)
+    (/production flag-list
+		 LPAREN
+		 (/or (flag (/or (/greedy (SP flag)) /always-match))
+		      /always-match)
+		 RPAREN)
+
+    (/production hiersep
+		 (/or (/token hiersep-1 "\"\\([^\x0d\x0a\\\"]\|\\[\\\"]\\)\""
+			      1 eimap/parse-unqote-string)
+		      NIL))
+    (/production mailbox-list
+		 LPAREN mbx-list-flags RPAREN SP
+		 hiersep SP (/or (/token INBOX)
+				 astring))
+
+    (/production status-att-pair
+		 (/or (/token MESSAGES)
+		      (/token RECENT)
+		      (/token UIDNEXT)
+		      (/token UIDVALIDITY)
+		      (/token UNSEEN))
+		 SP number)
+    (/production status-att-list
+		 status-att-pair
+		 (/or (/greedy (SP status-att-pair)) /always-match))
+
+    (/production mailbox-data
+		 (/or ((/token FLAGS) SP flag-list)
+		      ((/token LIST) SP mailbox-list)
+		      ((/token LSUB) SP mailbox-list)
+		      ((/token SEARCH) (/or (/greedy (SP nz-number)) /always-match))
+		      ((/token STATUS) SP mailbox SP LPAREN status-att-list RPAREN)
+		      ((/production EXISTS
+				    number SP "EXISTS")
+		       (/production RECENT
+				    number SP "RECENT"))))
+
+    (/production msg-att-static
+		 (/or ((/token ENVELOPE) SP envelope)
+		      ((/token INTERNALDATE) SP date-time)
+		      ((/token RFC822) (/or (/token .HEADER)
+					    (/token .TEXT)
+					    /always-match) SP nstring)
+		      ((/token RFC822.SIZE) SP number)
+		      ((/token BODY) (/or (/token STRUCTURE)
+					  /always-match) SP body)
+		      (BODY section (/or (LANGL number RANGL)
+					 /always-match) SP nstring)
+		      ((/token UID) SP number)))
+    (/production msg-att
+		 LPAREN
+		 (/or msg-att-dynamic
+		      msg-att-static)
+		 (/or (/greedy (SP (/or msg-att-dynamic
+					msg-att-static)))
+		      /always-match)
+		 RPAREN)
+
+    (/production message-data
+		 nz-number SP (/or (/token EXPUNGE)
+				   ((/token FETCH) SP msg-att)))
 
     (/production capability-data
 		 "CAPABILITY"
@@ -87,44 +156,6 @@
 		      ((/token UNSEEN) SP nz-number)
 		      (atom (/or (SP (/token resp-text-code-text "[^]]+" 0 parser-token-string)) /always-match)))
 		 RBRACK SP)
-
-    (/token flag "\\\\?[^]\x00-\x1f\x7f){ %*\"\\]+" 0 parser-token-string)
-    (/production flag-list
-		 LPAREN
-		 (/or (flag (/or (/greedy (SP flag)) /always-match))
-		      /always-match)
-		 RPAREN)
-
-    (/production hiersep
-		 (/or (/token hiersep-1 "\"\\([^\x0d\x0a\\\"]\|\\[\\\"]\\)\""
-			      1 eimap/parse-unqote-string)
-		      (/token NIL)))
-    (/production mailbox-list
-		 LPAREN mbx-list-flags RPAREN SP
-		 hiersep SP (/or (/token INBOX)
-				 astring))
-
-    (/production status-att-pair
-		 (/or (/token MESSAGES)
-		      (/token RECENT)
-		      (/token UIDNEXT)
-		      (/token UIDVALIDITY)
-		      (/token UNSEEN))
-		 SP number)
-    (/production status-att-list
-		 status-att-pair
-		 (/or (/greedy (SP status-att-pair)) /always-match))
-
-    (/production mailbox-data
-		 (/or ((/token FLAGS) SP flag-list)
-		      ((/token LIST) SP mailbox-list)
-		      ((/token LSUB) SP mailbox-list)
-		      ((/token SEARCH) (/or (/greedy (SP nz-number)) /always-match))
-		      ((/token STATUS) SP mailbox SP LPAREN status-att-list RPAREN)
-		      ((/production EXISTS
-				    number SP "EXISTS")
-		       (/production RECENT
-				    number SP "RECENT"))))
 
     (/production resp-text
                  (/or resp-text-code /always-match) text)
