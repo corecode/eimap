@@ -18,7 +18,7 @@
       (mapcar 'eimap/parse-unqote-string args)
     (lexical-let
 	((qstr (parser-extract-string args)))
-      (replace-regexp-in-string "\\\\" "" qstr))))
+      (replace-regexp-in-string "\\\\\\(.\\)" "\\1" qstr))))
 
 (defun eimap/parse-number (args)
   (if (listp args)
@@ -26,6 +26,7 @@
     (lexical-let
 	((str (parser-extract-string args)))
       (string-to-number str 10))))
+
 
 (parser-define
  'imap
@@ -101,6 +102,24 @@
 		       (/production RECENT
 				    number SP "RECENT"))))
 
+    (/production env-addr-list
+		 (/or (LPAREN (/greedy address) RPAREN)
+		      NIL))
+    (/alias env-bcc env-addr-list)
+    (/alias env-cc env-addr-list)
+    (/alias env-from env-addr-list)
+    (/alias env-reply-to env-addr-list)
+    (/alias env-sender env-addr-list)
+    (/alias env-to env-addr-list)
+    (/alias env-date nstring)
+    (/alias env-subject nstring)
+    (/alias env-message-id nstring)
+
+    (/production envelope
+		 LPAREN env-date SP env-subject SP env-from SP
+		 env-sender SP env-reply-to SP env-to SP env-cc SP
+		 env-bcc SP env-in-reply-to SP env-message-id RPAREN)
+    (/alias date-time quoted)
     (/production msg-att-static
 		 (/or ((/token ENVELOPE) SP envelope)
 		      ((/token INTERNALDATE) SP date-time)
