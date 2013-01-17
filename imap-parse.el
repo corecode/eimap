@@ -42,7 +42,6 @@
 
     (/token NIL)
 
-    (/token nz-number "[1-9][0-9]*" 0 eimap/parse-number)
     (/token number "[0-9]+" 0 eimap/parse-number)
 
     (/token tag "[^]\x00-\x1f\x7f){ %*\"\\]" 0 parser-token-string)
@@ -95,7 +94,7 @@
 		 (/or ((/token FLAGS) SP flag-list)
 		      ((/token LIST) SP mailbox-list)
 		      ((/token LSUB) SP mailbox-list)
-		      ((/token SEARCH) (/or (/greedy (SP nz-number)) /always-match))
+		      ((/token SEARCH) (/or (/greedy (SP number)) /always-match))
 		      ((/token STATUS) SP mailbox SP LPAREN status-att-list RPAREN)
 		      ((/production EXISTS
 				    number SP "EXISTS")
@@ -142,8 +141,8 @@
 		 RPAREN)
 
     (/production message-data
-		 nz-number SP (/or (/token EXPUNGE)
-				   ((/token FETCH) SP msg-att)))
+		 number SP (/or (/token EXPUNGE)
+				((/token FETCH) SP msg-att)))
 
     (/production capability-data
 		 "CAPABILITY"
@@ -170,9 +169,9 @@
 		      (/token READ-ONLY)
 		      (/token READ-WRITE)
 		      (/token TRYCREATE)
-		      ((/token UIDNEXT) SP nz-number)
-		      ((/token UIDVALIDITY) SP nz-number)
-		      ((/token UNSEEN) SP nz-number)
+		      ((/token UIDNEXT) SP number)
+		      ((/token UIDVALIDITY) SP number)
+		      ((/token UNSEEN) SP number)
 		      (atom (/or (SP (/token resp-text-code-text "[^]]+" 0 parser-token-string)) /always-match)))
 		 RBRACK SP)
 
