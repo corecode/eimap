@@ -14,14 +14,14 @@
     literal))
 
 (defun eimap/parse-unqote-string (args)
-  (if (listp args)
+  (if (listp (car args))
       (mapcar 'eimap/parse-unqote-string args)
     (lexical-let
 	((qstr (parser-extract-string args)))
       (replace-regexp-in-string "\\\\\\(.\\)" "\\1" qstr))))
 
 (defun eimap/parse-number (args)
-  (if (listp args)
+  (if (listp (car args))
       (mapcar 'eimap/parse-number args)
     (lexical-let
 	((str (parser-extract-string args)))
@@ -96,9 +96,9 @@
 		      ((/token LSUB) SP mailbox-list)
 		      ((/token SEARCH) (/or (/greedy (SP number)) /always-match))
 		      ((/token STATUS) SP mailbox SP LPAREN status-att-list RPAREN)
-		      ((/production EXISTS
+		      ((/production exists-count
 				    number SP "EXISTS")
-		       (/production RECENT
+		       (/production recent-count
 				    number SP "RECENT"))))
 
     (/production env-addr-list
@@ -119,6 +119,87 @@
 		 env-sender SP env-reply-to SP env-to SP env-cc SP
 		 env-bcc SP env-in-reply-to SP env-message-id RPAREN)
     (/alias date-time quoted)
+
+    (/production media-message
+		 DQUOTE (/token MESSAGE "MESSAGE" 0 parser-token-string) DQUOTE
+		 SP DQUOTE (/token RFC822- "RFC822" 0 parser-token-string) DQUOTE)
+    (/production media-text
+		 DQUOTE (/token TEXT "TEXT" 0 parser-token-string) DQUOTE
+		 SP string)
+    (/production media-basic
+		 string SP string)
+
+    (/production body-fld-param-pair
+		 string SP string)
+    (/production body-fld-param
+		 (/or (LPAREN
+		       body-fld-param-pair
+		       (/or (/greedy (SP body-fld-param-pair))
+			    /always-match) RPAREN)
+		      NIL))
+    (/alias body-fld-id nstring)
+    (/alias body-fld-desc nstring)
+    (/alias body-fld-end string)
+    (/alias body-fld-octets number)
+    (/production body-fields
+		 body-fld-param SP body-fld-id SP body-fld-desc SP
+		 body-fld-enc SP body-fld-octets)
+    (/alias body-fld-lines number)
+    (/production body-type-msg
+		 media-message SP body-fields SP envelope
+		 SP body SP body-fld-lines)
+    (/production body-type-text
+		 media-text SP body-fields SP body-fld-lines)
+    (/production body-type-basic
+		 media-basic SP body-fields)
+    (/alias body-fld-md5 nstring)
+    (/production body-fld-dsp
+		 (/or (LPAREN string SP body-fld-param RPAREN)
+		      NIL))
+    (/production body-fld-lang
+		 (/or nstring
+		      (LPAREN string (/or (/greedy (SP string))
+					  /always-match) RPAREN)))
+    (/alias body-fld-loc nstring)
+    (/production body-extension
+		 (/or nstring
+		      number
+		      (LPAREN body-extension (/or (/greedy body-extension)
+						  /always-match) RPAREN)))
+    (/production body-ext-1part
+		 body-fld-md5
+		 (/or (SP body-fld-dsp
+			  (/or (SP body-fld-lang
+				   (/or (SP body-fld-loc
+					    (/or (/greedy (SP body-extension))
+						 /always-match))
+					/always-match))
+			       /always-match))
+		      /always-match))
+    (/production body-type-1part
+		 (/or body-type-msg
+		      body-type-text
+		      body-type-basic)
+		 (/or (SP body-ext-1part)
+		      /always-match))
+    (/production body-ext-mpart
+		 body-fld-param
+		 (/or (SP body-fld-dsp
+			  (/or (SP body-fld-lang
+				   (/or (SP body-fld-loc
+					    (/or (/greedy (SP body-extension))
+						 /always-match))
+					/always-match))
+			       /always-match))
+		      /always-match))
+    (/production body-type-mpart
+		 /greedy body SP string
+		 (/or (SP body-ext-mpart)
+		      /always-match))
+    (/production body
+		 LPAREN (/or body-type-1part
+			     body-type-mpart) RPAREN)
+
     (/production msg-att-static
 		 (/or ((/token ENVELOPE) SP envelope)
 		      ((/token INTERNALDATE) SP date-time)
@@ -169,9 +250,9 @@
 		      (/token READ-ONLY)
 		      (/token READ-WRITE)
 		      (/token TRYCREATE)
-		      ((/token UIDNEXT) SP number)
-		      ((/token UIDVALIDITY) SP number)
-		      ((/token UNSEEN) SP number)
+		      (UIDNEXT SP number)
+		      (UIDVALIDITY SP number)
+		      (UNSEEN SP number)
 		      (atom (/or (SP (/token resp-text-code-text "[^]]+" 0 parser-token-string)) /always-match)))
 		 RBRACK SP)
 
@@ -182,16 +263,19 @@
 		      (/token NO)
 		      (/token BAD)) SP resp-text CRLF)
     (/production response-data
-                 ((/token untagged "*") SP
-		  (/or resp-cond-state
-		       resp-cond-bye
-		       mailbox-data
-		       message-data
-		       capability-data)))
+                 "*" SP (/or resp-cond-state
+			     resp-cond-bye
+			     mailbox-data
+			     message-data
+			     capability-data) CRLF)
     (/production resp-cond-bye
 		 (/token BYE) SP resp-text)
     (/production response-tagged
 		 tag SP resp-cond-state)
-    )
-
-  /and response-data))
+    (/production continue-req
+		 "+" SP /or resp-text CRLF)
+    (/production response
+		 (/or continue-req
+		      response-data
+		      response-tagged)))
+  response))
