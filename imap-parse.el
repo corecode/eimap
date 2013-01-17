@@ -13,37 +13,136 @@
     (set-match-data (list matchstart litend))
     literal))
 
+(defun eimap/parse-unqote-string (args)
+  (if (listp args)
+      (mapcar 'eimap/parse-unqote-string args)
+    (lexical-let
+	((qstr (parser-extract-string args)))
+      (replace-regexp-in-string "\\\\" "" qstr))))
+
+(defun eimap/parse-number (args)
+  (if (listp args)
+      (mapcar 'eimap/parse-number args)
+    (lexical-let
+	((str (parser-extract-string args)))
+      (string-to-number str 10))))
+
 (parser-define
  'imap
  (parser-compile
   (define
     (/token SP " " null)
-    (/token CRLF "\u000D\u000A" null)
-    (/token UNTAGGED "*" nil)
-    (/token OK "OK")
-    (/token NO "NO")
-    (/token BAD "BAD")
+    (/token CRLF "\x0d\x0a" null)
+
     (/token LBRACK "\\[" null)
     (/token RBRACK "]" null)
-    (/token ATOM "[^]\x00-\x1f\x7f){ %*\"\\]+")
-    (/token text "[^\x0d\x0a]+")
+    (/token LPAREN "(" null)
+    (/token RPAREN ")" null)
+
+    (/token nz-number "[1-9][0-9]*" 0 eimap/parse-number)
+    (/token number "[0-9]+" 0 eimap/parse-number)
+
+    (/token tag "[^]\x00-\x1f\x7f){ %*\"\\]" 0 parser-token-string)
+
+    (/token atom "[^]\x00-\x1f\x7f){ %*\"\\]+" 0 parser-token-string)
     (/token literal "{\\([0-9]+\\)}\x0d\x0a" (0 1) eimap/slurp-literal)
-    (/token resp-text-code "[^]]+")	; hack
+    (/token quoted "\"\\(\\(?:[^\x0d\x0a\\\"]*\\|\\\\[\\\"]\\)*\\)\""
+	    1 eimap/parse-unqote-string)
+    (/production string
+		 (/or quoted
+		      literal))
+    (/production astring
+		 (/or (/token string- "[^\x00-\x1f\x7f){ %*\"\\]+"
+			      0 parser-token-string)
+		      string))
+    (/token text "[^\x0d\x0a]+" 0 parser-token-string)
+
+    (/production capability-data
+		 "CAPABILITY"
+		 (/greedy (SP (/or (/production AUTH "AUTH=" atom)
+				   atom))))
+
+    (/production resp-text-code
+		 LBRACK
+		 (/or (/token ALERT)
+
+		      ((/token BADCHARSET) ((SP
+					     LPAREN
+					     astring (/or (/greedy (SP astring) /always-match))
+					     RPAREN) /always-match))
+
+		      capability-data
+		      (/token PARSE)
+
+		      ((/token PERMANENTFLAGS) (SP
+						LPAREN
+						(flag-perm (/or (/greedy (SP flag-perm)) /always-match))
+						RPAREN))
+
+		      (/token READ-ONLY)
+		      (/token READ-WRITE)
+		      (/token TRYCREATE)
+		      ((/token UIDNEXT) SP nz-number)
+		      ((/token UIDVALIDITY) SP nz-number)
+		      ((/token UNSEEN) SP nz-number)
+		      (atom (/or (SP (/token resp-text-code-text "[^]]+" 0 parser-token-string)) /always-match)))
+		 RBRACK SP)
+
+    (/token flag "\\\\?[^]\x00-\x1f\x7f){ %*\"\\]+" 0 parser-token-string)
+    (/production flag-list
+		 LPAREN
+		 (/or (flag (/or (/greedy (SP flag)) /always-match))
+		      /always-match)
+		 RPAREN)
+
+    (/production hiersep
+		 (/or (/token hiersep-1 "\"\\([^\x0d\x0a\\\"]\|\\[\\\"]\\)\""
+			      1 eimap/parse-unqote-string)
+		      (/token NIL)))
+    (/production mailbox-list
+		 LPAREN mbx-list-flags RPAREN SP
+		 hiersep SP (/or (/token INBOX)
+				 astring))
+
+    (/production status-att-pair
+		 (/or (/token MESSAGES)
+		      (/token RECENT)
+		      (/token UIDNEXT)
+		      (/token UIDVALIDITY)
+		      (/token UNSEEN))
+		 SP number)
+    (/production status-att-list
+		 status-att-pair
+		 (/or (/greedy (SP status-att-pair)) /always-match))
+
+    (/production mailbox-data
+		 (/or ((/token FLAGS) SP flag-list)
+		      ((/token LIST) SP mailbox-list)
+		      ((/token LSUB) SP mailbox-list)
+		      ((/token SEARCH) (/or (/greedy (SP nz-number)) /always-match))
+		      ((/token STATUS) SP mailbox SP LPAREN status-att-list RPAREN)
+		      ((/production EXISTS
+				    number SP "EXISTS")
+		       (/production RECENT
+				    number SP "RECENT"))))
+
     (/production resp-text
-                 (/and LBRACK resp-text-code RBRACK SP)
-                 text)
+                 (/or resp-text-code /always-match) text)
     (/production resp-cond-state
-                 (/or OK NO BAD)
-                 SP
-                 resp-text
-		 CRLF
-		 )
+                 (/or (/token OK)
+		      (/token NO)
+		      (/token BAD)) SP resp-text CRLF)
     (/production response-data
-		 (UNTAGGED
-		  SP
-		  (/term foo)
-		  resp-cond-state
-		  ))
+                 ((/token untagged "*") SP
+		  (/or resp-cond-state
+		       resp-cond-bye
+		       mailbox-data
+		       message-data
+		       capability-data)))
+    (/production resp-cond-bye
+		 (/token BYE) SP resp-text)
+    (/production response-tagged
+		 tag SP resp-cond-state)
     )
 
-  /and UNTAGGED SP OK SP literal SP ATOM CRLF))
+  /and response-data))
