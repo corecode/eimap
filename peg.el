@@ -179,6 +179,8 @@ Note: a PE can't \"call\" rules by name."
   "Translate the PEG RULES, to a top-down parser."
   (let ((peg-rules (make-hash-table :size 20)))
     (dolist (rule rules)
+      (when (gethash (car rule) peg-rules)
+	(error "Duplicate rule %S" (car rule)))
       (puthash (car rule) 'defer peg-rules))
     (dolist (rule rules)
       (puthash (car rule) (peg-normalize `(and . ,(cdr rule))) peg-rules))
