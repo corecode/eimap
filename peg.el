@@ -659,6 +659,9 @@ input.  PATH is the list of rules that we have visited so far."
 (peg-add-method merge-error * (merged exp)
   (peg-merge-error exp merged))
 
+(peg-add-method merge-error not (merged exp)
+  (peg-merge-error exp merged))
+
 (peg-add-method merge-error any (merged)
   (add-to-list 'merged '(any)))
 
