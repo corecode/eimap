@@ -238,6 +238,8 @@ Note: a PE can't \"call\" rules by name."
 	 `(call ,exp))
 	((vectorp exp)
 	 (peg-normalize `(set . ,(append exp '()))))
+	((listp exp)
+	 (funcall 'peg-normalize `(and . ,exp)))
 	(t
 	 (error "Invalid parsing expression: %S" exp))))
 
