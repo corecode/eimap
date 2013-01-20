@@ -194,7 +194,8 @@ Note: a PE can't \"call\" rules by name."
 			      ,(peg-translate-exp (gethash name peg-rules))))))
 		 rules)
        (cond ((funcall ,(car (car rules)))
-	      (peg-postprocess peg-thunks))
+	      (save-excursion
+		(peg-postprocess peg-thunks)))
 	     (t
 	      (goto-char (car peg-errors))
 	      (error "Parse error at %d (expecting %S)"
