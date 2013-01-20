@@ -284,13 +284,18 @@ Note: a PE can't \"call\" rules by name."
   (peg-normalize `(stack-action ,form)))
 
 (peg-add-method normalize stack-action (form)
-  (unless (member '-- form)
-    (error "Malformed stack action: %S" form))
-  (let ((args (cdr (member '-- (reverse form))))
-	(values (cdr (member '-- form))))
-    (let ((form `(let ,(mapcar (lambda (var) `(,var (pop peg-stack))) args)
-		   ,@(mapcar (lambda (val) `(push ,val peg-stack)) values))))
-      `(action ,form))))
+  (if (stringp form)
+      (peg-normalize `(and ,form (stack-action (-- ',(make-symbol form)))))
+
+    (when (symbolp form)
+      (setq form (list '-- form)))
+    (unless (member '-- form)
+      (error "Malformed stack action: %S" form))
+    (let ((args (cdr (member '-- (reverse form))))
+	  (values (cdr (member '-- form))))
+      (let ((form `(let ,(mapcar (lambda (var) `(,var (pop peg-stack))) args)
+		     ,@(mapcar (lambda (val) `(push ,val peg-stack)) values))))
+	`(action ,form)))))
 
 (defvar peg-char-classes
   '(ascii alnum alpha blank cntrl digit graph lower multibyte nonascii print
