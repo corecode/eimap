@@ -239,7 +239,7 @@ Note: a PE can't \"call\" rules by name."
 	((vectorp exp)
 	 (peg-normalize `(set . ,(append exp '()))))
 	((listp exp)
-	 (funcall 'peg-normalize `(and . ,exp)))
+	 (peg-normalize `(cons ,(car exp) ,(cdr exp))))
 	(t
 	 (error "Invalid parsing expression: %S" exp))))
 
@@ -284,18 +284,13 @@ Note: a PE can't \"call\" rules by name."
   (peg-normalize `(stack-action ,form)))
 
 (peg-add-method normalize stack-action (form)
-  (if (stringp form)
-      (peg-normalize `(and ,form (stack-action (-- ',(make-symbol form)))))
-
-    (when (symbolp form)
-      (setq form (list '-- form)))
-    (unless (member '-- form)
-      (error "Malformed stack action: %S" form))
-    (let ((args (cdr (member '-- (reverse form))))
-	  (values (cdr (member '-- form))))
-      (let ((form `(let ,(mapcar (lambda (var) `(,var (pop peg-stack))) args)
-		     ,@(mapcar (lambda (val) `(push ,val peg-stack)) values))))
-	`(action ,form)))))
+  (unless (member '-- form)
+    (error "Malformed stack action: %S" form))
+  (let ((args (cdr (member '-- (reverse form))))
+	(values (cdr (member '-- form))))
+    (let ((form `(let ,(mapcar (lambda (var) `(,var (pop peg-stack))) args)
+		   ,@(mapcar (lambda (val) `(push ,val peg-stack)) values))))
+      `(action ,form))))
 
 (defvar peg-char-classes
   '(ascii alnum alpha blank cntrl digit graph lower multibyte nonascii print
@@ -358,6 +353,19 @@ Note: a PE can't \"call\" rules by name."
 					(t (push e l) t))))
 			    l)))))))
 
+(peg-add-method normalize cons (a &rest b)
+  (peg-normalize
+   `(and (list ,a)
+	 (list ,@b)
+	 (stack-action (a b --
+			  (apply 'cons
+				 (mapcar
+				  (lambda (item)
+				    (if (null (cdr item))
+					(car item)
+				      item))
+				  (list a b))))))))
+
 (peg-add-method normalize substring (&rest args)
   (peg-normalize
    `(and `(-- (point))
@@ -380,7 +388,13 @@ Note: a PE can't \"call\" rules by name."
 	 (stack-action (x --)))))
 
 (peg-add-method normalize quote (form)
-  (error "quote is reverved for future use"))
+  (cond
+   ((stringp form)
+    (peg-normalize `(and ,form (stack-action (-- ',(make-symbol form))))))
+   ((symbolp form)
+    (peg-normalize `(stack-action (-- ',form))))
+   (t
+    (error "Invalid form passed to quote %S" form))))
 
 (peg-define-method-table translate)
 
