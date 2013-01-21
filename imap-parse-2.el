@@ -3,7 +3,7 @@
 (defmacro peg-defparse (funname rules &optional transform)
   (let ((parser (peg-translate-rules rules)))
     `(defun ,funname ()
-       ;,(pp parser)
+                                        ;,(pp parser)
        (let ((result ,parser)
              (transform ,transform))
          (cond
@@ -37,142 +37,167 @@
 
 (peg-defparse
  eimap/parse
- ((response (or response-data
-                response-tagged))
-
+ (
 
 ;;; responses
 
-  (response-tagged `:tag tag SP resp-cond-state CRLF)
-  (response-data "*" SP (or resp-cond-state
-                            resp-cond-bye
-                            mailbox-data
-                            message-data
-                            capability-data) CRLF)
-  (resp-cond-bye `:bye "BYE" SP resp-text)
+  (response (or continue-req
+                response-data
+                response-tagged))
+
+  (continue-req (cons 'type 'continue)
+                "+" SP resp-text CRLF)
+
+  (response-tagged (cons 'type 'tag)
+                   (cons 'tag tag) SP resp-cond-state CRLF)
+
+  (response-data (cons 'type 'data)
+                 "*" SP
+                 (or resp-cond-state
+                     mailbox-data
+                     message-data
+                     capability-data) CRLF)
 
 
 ;;; response status and code
 
-  (resp-cond-state `:state (or `"OK" `"NO" `"BAD") SP resp-text)
+  (resp-cond-state (cons 'state (or '"OK"
+                                    '"NO"
+                                    '"BAD"
+                                    '"BYE"
+                                    '"PREAUTH")) SP resp-text)
   (resp-text (opt resp-text-code) text)
   (resp-text-code "["
-                  `:resp-code
-                  (list
-                   (or `"ALERT"
-                       (`"BADCHARSET" (list (opt SP "(" astring (* SP astring) ")")))
-                       capability-data
-                       `"PARSE"
-                       (`"PERMANENTFLAGS" SP flag-list)
-                       `"READ-ONLY"
-                       `"READ-WRITE"
-                       (`"UIDNEXT" SP number)
-                       (`"UIDVALIDITY" SP number)
-                       (`"UNSEEN" SP number)
-                       (atom (opt SP `:code-text (substring (+ ((not "]") (any))))))))
+                  (cons
+                   'resp-code
+                   (or
+                    '"ALERT"
+                    '"PARSE"
+                    '"READ-ONLY"
+                    '"READ-WRITE"
+                    (cons '"BADCHARSET"
+                          (list (opt SP "(" astring
+                                     (* SP astring) ")")))
+                    capability-data
+                    (cons '"PERMANENTFLAGS" (and SP flag-list))
+                    (cons '"UIDNEXT" SP number)
+                    (cons '"UIDVALIDITY" SP number)
+                    (cons '"UNSEEN" SP number)
+                    (cons atom (opt SP (substring (+ (and (not "]")
+                                                          (any))))))))
                   "]" SP)
 
-  (capability-data `"CAPABILITY" (list (+ SP (or (`:auth "AUTH=" atom)
-                                                 atom))))
+  (capability-data (cons '"CAPABILITY"
+                         (list (+ SP ;; (or
+                                  ;;  (and "AUTH="
+                                  ;;       (cons 'AUTH atom)))
+                                  atom))))
 
   (flag-list "(" (list (opt flag (* SP flag))) ")")
-  (flag (or ("\\Answered" `:answered)
-            ("\\Flagged" `:flagged)
-            ("\\Deleted" `:deleted)
-            ("\\Seen" `:seen)
-            ("\\Draft" `:draft)
-            ("\\Recent" `:recent)
-            (`:keyword atom)
-            flag-extension))
-  (flag-extension "\\" `:extflag atom)
+  (flag (or ;; '"\\Answered"
+         ;; '"\\Flagged"
+         ;; '"\\Deleted"
+         ;; '"\\Seen"
+         ;; '"\\Draft"
+         ;; '"\\Recent"
+         atom
+         flag-extension))
+  (flag-extension "\\" atom `(s -- (concat "\\" s)))
 
 
 ;;; mailbox
 
-  (mailbox-data (or (`"FLAGS" SP flag-list)
-                    (`"LIST" SP mailbox-list)
-                    (`"LSUB" SP mailbox-list)
-                    (`"SEARCH" (list (* SP number)))
-                    (`"STATUS" SP mailbox SP "(" status-att-list ")")
-                    (`:exists-count number SP "EXISTS")
-                    (`:recent-count number SP "RECENT")))
+  (mailbox-data (cons 'data 'mailbox)
+                (or (cons '"FLAGS" SP flag-list)
+                    (cons '"LIST" SP mailbox-list)
+                    (cons '"LSUB" SP mailbox-list)
+                    (cons '"SEARCH" (list (* SP number)))
+                    (cons '"STATUS" SP mailbox SP "(" status-att-list ")")
+                    (cons 'EXISTS number SP "EXISTS")
+                    (cons 'RECENT number SP "RECENT")))
 
-  (mailbox-list "(" (opt mbx-list-flags) ")" SP
-                `:mboxsep (or ("\"" (substring QUOTED-CHAR)
-                               `(str -- (eimap/parse-unquote-string))
-                               "\"")
-                              =nil)
+  (mailbox-list "(" (opt (cons 'flags mbx-list-flags)) ")" SP
+                (cons'mboxsep (or (and "\"" (substring QUOTED-CHAR)
+                                       `(str -- (eimap/parse-unquote-string))
+                                       "\"")
+                                  =nil))
                 SP mailbox)
-  (mailbox `:mailbox astring)
-  (mbx-list-flags mbx-list-flag (* SP mbx-list-flag))
-  (mbx-list-flag (or ("\\Noinferiors" `:noinferiors)
-                     ("\\Noselect" `:noselect)
-                     ("\\Marked" `:marked)
-                     ("\\Unmarked" `:unmarked)
-                     flag-extension))
 
-  (status-att-list (list status-att-pair (* SP status-att-pair)))
-  (status-att-pair (or `"MESSAGES"
-                       `"RECENT"
-                       `"UIDNEXT"
-                       `"UIDVALIDITY"
-                       `"UNSEEN")
-                   SP number)
+  (mailbox (cons 'mailbox astring))
+  (mbx-list-flags (list mbx-list-flag (* SP mbx-list-flag)))
+  (mbx-list-flag (or ;; '"\\Noinferiors"
+                  ;; '"\\Noselect"
+                  ;; '"\\Marked"
+                  ;; '"\\Unmarked"
+                  flag-extension))
+
+  (status-att-list (cons 'att
+                         (list status-att-pair (* SP status-att-pair))))
+  (status-att-pair (cons (or '"MESSAGES"
+                             '"RECENT"
+                             '"UIDNEXT"
+                             '"UIDVALIDITY"
+                             '"UNSEEN")
+                         SP number))
 
 
 ;;; message data
-  (message-data number SP
-                (or `"EXPUNGE"
-                    (`"FETCH" SP msg-att)))
-  (msg-att "(" (list (or msg-att-dynamic
-                         msg-att-static)
-                     (* SP (or msg-att-dynamic
-                               msg-att-static)))
+  (message-data (cons 'data 'message)
+                (cons 'msgid number) SP
+                (or (cons 'action'"EXPUNGE")
+                    (and (cons 'action'"FETCH") SP msg-att)))
+  (msg-att "(" (or msg-att-dynamic
+                   msg-att-static)
+           (* SP (or msg-att-dynamic
+                     msg-att-static))
            ")")
-  (msg-att-dynamic `:flags "FLAGS" SP flag-list)
-  (msg-att-static (or (`"ENVELOPE" SP envelope)
-                      (`"INTERNALDATE" SP quoted)
-                      (`"RFC822" SP nstring)
-                      (`"RFC822.HEADER" SP nstring)
-                      (`"RFC822.TEXT" SP nstring)
-                      (`"RFC822.SIZE" SP number)
-                      (`"BODY" SP body)
-                      (`"BODYSTRUCTURE" SP body)
-                      (`"BODY" section (opt "<" number ">") SP nstring)
-                      (`"UID" SP number)
+  (msg-att-dynamic (cons '"FLAGS" SP flag-list))
+  (msg-att-static (or (cons '"ENVELOPE" SP envelope)
+                      (cons '"INTERNALDATE" SP quoted)
+                      (cons '"RFC822" SP nstring)
+                      (cons '"RFC822.HEADER" SP nstring)
+                      (cons '"RFC822.TEXT" SP nstring)
+                      (cons '"RFC822.SIZE" SP number)
+                      (cons '"BODY" SP body)
+                      (cons '"BODYSTRUCTURE" SP body)
+                      (and (cons 'bodysection "BODY" section)
+                           (opt (cons 'offset  "<" number ">")) SP
+                           (cons 'data nstring))
+                      (cons '"UID" SP number)
                       ))
   (section "[" (opt section-spec) "]")
   (section-spec (or section-msgtext
-                    (section-part (opt "." section-text))))
-  (section-part `:part (list number (* "." number)))
-  (section-msgtext (or `"HEADER"
-                       (`"HEADER.FIELDS" (opt `".NOT") SP header-list)
+                    (and section-part (opt "." section-text))))
+  (section-part number (* "." number))
+  (section-msgtext (or '"HEADER"
+                       (and (cons (or '"HEADER.FIELDS"
+                                      '"HEADER.FIELDS.NOT")
+                                  SP header-list))
                        "TEXT"))
   (section-text (or section-msgtext
-                    `"MIME"))
-  (header-list `:header-list "(" (list astring (* SP astring)) ")")
+                    '"MIME"))
+  (header-list "(" astring (* SP astring) ")")
 
-  (envelope "(" `:envelope
-            (list
-             `:date nstring SP
-             `:subject nstring SP
-             `:from env-addr-list SP
-             `:sender env-addr-list SP
-             `:reply-to env-addr-list SP
-             `:to env-addr-list SP
-             `:cc env-addr-list SP
-             `:bcc env-addr-list SP
-             `:in-reply-to nstring SP
-             `:message-id nstring)
+  (envelope "("
+            (cons 'date nstring SP)
+            (cons 'subject nstring SP)
+            (cons 'from env-addr-list SP)
+            (cons 'sender env-addr-list SP)
+            (cons 'reply-to env-addr-list SP)
+            (cons 'to env-addr-list SP)
+            (cons 'cc env-addr-list SP)
+            (cons 'bcc env-addr-list SP)
+            (cons 'in-reply-to nstring SP)
+            (cons 'message-id nstring)
             ")")
-  (env-addr-list (or ("(" (list (+ address) ")"))
+  (env-addr-list (or (and "(" (+ address) ")")
                      =nil))
   (address "("
            (list
-            `:name nstring SP
-            `:adl nstring SP
-            `:mailbox nstring SP
-            `:host nstring)
+            (cons 'name nstring SP)
+            (cons 'adl nstring SP)
+            (cons 'mailbox nstring SP)
+            (cons 'host nstring))
            ")")
 
 ;;; body
@@ -190,34 +215,34 @@
   (body-type-mpart "XXX")
 
   (body-type-text (if "\"TEXT\"" SP)
-                  mime-type SP body-fields SP `:lines number)
+                  mime-type SP body-fields SP (cons 'lines number))
 
   (body-type-msg "XXX")
   (body-type-basic "XXX")
 
-  (mime-type `:mime (list quoted SP quoted))
+  (mime-type (cons 'mime quoted SP quoted))
   (body-fields body-fld-param SP
                body-fld-id SP
                body-fld-desc SP
                body-fld-enc SP
                body-fld-octets)
-  (body-fld-param `:param (or ("(" string-pair-list ")")
-                              =nil))
-  (body-fld-id `:id nstring)
-  (body-fld-desc `:desc nstring)
-  (body-fld-enc `:enc string)
-  (body-fld-octets `:octets number)
+  (body-fld-param (cons 'param (or (and "(" string-pair-list ")")
+                                   =nil)))
+  (body-fld-id (cons 'id nstring))
+  (body-fld-desc (cons 'desc nstring))
+  (body-fld-enc (cons 'enc string))
+  (body-fld-octets (cons 'octets number))
 
 
 
 ;;; data extraction
 
-  (string-pair-list (list string-pair (* SP string-pair)))
-  (string-pair string SP string `(a b -- (cons a b)))
+  (string-pair-list string-pair (* SP string-pair))
+  (string-pair (cons string SP string))
 
   (=nil "NIL" `(-- nil))
 
-  (text `:text (substring (+ TEXT-CHAR)))
+  (text (cons 'text (substring (+ TEXT-CHAR))))
   (atom (substring (+ ATOM-CHAR)))
   (tag (substring (+ (not "+") ASTRING-CHAR)))
   (astring (or (substring (+ ASTRING-CHAR))
@@ -247,7 +272,7 @@
                     resp-specials))
   (TEXT-CHAR (not ["\x0d\x0a"]) (any))
   (quoted-specials ["\\\""])
-  (QUOTED-CHAR (or ((not quoted-specials) TEXT-CHAR)
-                   ("\\" quoted-specials)))
+  (QUOTED-CHAR (or (and (not quoted-specials) TEXT-CHAR)
+                   (and "\\" quoted-specials)))
   )
  'reverse)
