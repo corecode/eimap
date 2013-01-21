@@ -239,7 +239,7 @@ Note: a PE can't \"call\" rules by name."
 	((vectorp exp)
 	 (peg-normalize `(set . ,(append exp '()))))
 	((listp exp)
-	 (funcall 'peg-normalize `(and . ,exp)))
+	 (peg-normalize `(cons ,(car exp) ,(cdr exp))))
 	(t
 	 (error "Invalid parsing expression: %S" exp))))
 
@@ -352,6 +352,19 @@ Note: a PE can't \"call\" rules by name."
 					 (error "Marker not longer stack"))
 					(t (push e l) t))))
 			    l)))))))
+
+(peg-add-method normalize cons (a &rest b)
+  (peg-normalize
+   `(and (list ,a)
+	 (list ,@b)
+	 (stack-action (a b --
+			  (apply 'cons
+				 (mapcar
+				  (lambda (item)
+				    (if (null (cdr item))
+					(car item)
+				      item))
+				  (list a b))))))))
 
 (peg-add-method normalize substring (&rest args)
   (peg-normalize
