@@ -70,21 +70,22 @@
   (resp-text-code "["
                   (cons
                    'resp-code
-                   (or
-                    '"ALERT"
-                    '"PARSE"
-                    '"READ-ONLY"
-                    '"READ-WRITE"
-                    (cons '"BADCHARSET"
-                          (list (opt SP "(" astring
-                                     (* SP astring) ")")))
-                    capability-data
-                    (cons '"PERMANENTFLAGS" (and SP flag-list))
-                    (cons '"UIDNEXT" SP number)
-                    (cons '"UIDVALIDITY" SP number)
-                    (cons '"UNSEEN" SP number)
-                    (cons atom (opt SP (substring (+ (and (not "]")
-                                                          (any))))))))
+                   (list
+                    (or
+                     '"ALERT"
+                     '"PARSE"
+                     '"READ-ONLY"
+                     '"READ-WRITE"
+                     (cons '"BADCHARSET"
+                           (list (opt SP "(" astring
+                                      (* SP astring) ")")))
+                     capability-data
+                     (cons '"PERMANENTFLAGS" (and SP flag-list))
+                     (cons '"UIDNEXT" SP number)
+                     (cons '"UIDVALIDITY" SP number)
+                     (cons '"UNSEEN" SP number)
+                     (cons atom (opt SP (substring (+ (and (not "]")
+                                                           (any)))))))))
                   "]" SP)
 
   (capability-data (cons '"CAPABILITY"
@@ -190,7 +191,7 @@
             (cons 'in-reply-to nstring SP)
             (cons 'message-id nstring)
             ")")
-  (env-addr-list (or (and "(" (+ address) ")")
+  (env-addr-list (or (and "(" (list (+ address)) ")")
                      =nil))
   (address "("
            (list
@@ -237,7 +238,7 @@
 
 ;;; data extraction
 
-  (string-pair-list string-pair (* SP string-pair))
+  (string-pair-list (list string-pair (* SP string-pair)))
   (string-pair (cons string SP string))
 
   (=nil "NIL" `(-- nil))
