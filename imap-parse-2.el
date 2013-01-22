@@ -52,13 +52,11 @@
                    :params (list :tag tag SP resp-cond-state CRLF))
 
   (response-data :type 'data
-                 :params
-                 (list
-                  "*" SP
-                  (or resp-cond-data
-                      mailbox-data
-                      message-data
-                      capability-data) CRLF))
+                 "*" SP
+                 (or resp-cond-data
+                     mailbox-data
+                     message-data
+                     capability-data) CRLF)
 
 
 ;;; response status and code
@@ -79,23 +77,33 @@
                    '"READ-ONLY"
                    '"READ-WRITE"
                    (and '"BADCHARSET"
+                        :params
+                        (list
                          :charsets (list (opt SP "(" astring
-                                              (* SP astring) ")")))
-                   (and (if '"CAPABILITY") capability-data)
-                   (and '"PERMANENTFLAGS" SP :flags flag-list)
-                   (and '"UIDNEXT" SP :uidnext number)
-                   (and '"UIDVALIDITY" SP :uidvalidity number)
-                   (and '"UNSEEN" SP :unseen number)
-                   (and atom (opt :data SP (substring (+ (and (not "]")
-                                                              (any)))))))
+                                              (* SP astring) ")"))))
+                   capability-data
+                   (and '"PERMANENTFLAGS" SP
+                        :params (list :flags flag-list))
+                   (and '"UIDNEXT" SP
+                        :params (list :uidnext number))
+                   (and '"UIDVALIDITY" SP
+                        :params (list :uidvalidity number))
+                   (and '"UNSEEN" SP
+                        :params (list :unseen number))
+                   (and atom
+                        :params (list (opt :data SP
+                                           (substring (+ (and (not "]")
+                                                              (any))))))))
                   "]" SP)
 
-  (capability-data "CAPABILITY"
-                   :capabilities
-                   (list 'param
-                         (list (+ SP ;; (or (and "AUTH=" (cons 'AUTH
-                                  ;; atom)))
-                                  atom))))
+  (capability-data '"CAPABILITY"
+                   :params
+                   (list
+                    :capabilities
+                    (list 'param
+                          (list (+ SP ;; (or (and "AUTH=" (cons 'AUTH
+                                   ;; atom)))
+                                   atom)))))
 
   (flag-list "(" (list (opt flag (* SP flag))) ")")
   (flag (or ;; '"\\Answered"
@@ -112,14 +120,21 @@
 ;;; mailbox
 
   (mailbox-data :method
-                (or (and '"FLAGS" SP :flags flag-list)
-                    (and '"LIST" SP :mailbox-list mailbox-list)
-                    (and '"LSUB" SP :mailbox-list mailbox-list)
-                    (and '"SEARCH" :result (list (* SP number)))
-                    (and '"STATUS" SP mailbox
-                         SP "(" status-att-list ")")
-                    (and 'EXISTS :exists number SP "EXISTS")
-                    (and 'RECENT :recent number SP "RECENT")))
+                (or (and '"FLAGS" SP
+                         :params (list :flags flag-list))
+                    (and '"LIST" SP
+                         :params (list :mailbox-list mailbox-list))
+                    (and '"LSUB" SP
+                         :params (list :mailbox-list mailbox-list))
+                    (and '"SEARCH"
+                         :params (list :result (list (* SP number))))
+                    (and '"STATUS" SP
+                         :params (list mailbox
+                                       SP "(" status-att-list ")"))
+                    (and 'EXISTS
+                         :params (list :exists number SP "EXISTS"))
+                    (and 'RECENT
+                         :params (list :recent number SP "RECENT"))))
 
   (mailbox-list (list
                  "("
@@ -149,10 +164,11 @@
 
 
 ;;; message data
-  (message-data :msgid number SP
-                :method
-                (or '"EXPUNGE"
-                    (and '"FETCH" SP msg-att)))
+  (message-data :method
+                (or (and :method 'EXPUNGE
+                         :params (list :msgid number SP "EXPUNGE"))
+                    (and :method 'FETCH
+                         :params (list :msgid number SP "FETCH" SP msg-att))))
   (msg-att "(" (or msg-att-dynamic
                    msg-att-static)
            (* SP (or msg-att-dynamic
