@@ -45,53 +45,56 @@
                 response-data
                 response-tagged))
 
-  (continue-req (cons 'type 'continue)
-                "+" SP resp-text CRLF)
+  (continue-req  :type 'continue
+                 :params (list "+" SP resp-text CRLF))
 
-  (response-tagged (cons 'type 'tag)
-                   (cons 'tag tag) SP resp-cond-state CRLF)
+  (response-tagged :type 'tag
+                   :params (list :tag tag SP resp-cond-state CRLF))
 
-  (response-data (cons 'type 'data)
-                 "*" SP
-                 (or resp-cond-state
-                     mailbox-data
-                     message-data
-                     capability-data) CRLF)
+  (response-data :type 'data
+                 :params
+                 (list
+                  "*" SP
+                  (or resp-cond-data
+                      mailbox-data
+                      message-data
+                      capability-data) CRLF))
 
 
 ;;; response status and code
 
-  (resp-cond-state (cons 'state (or '"OK"
-                                    '"NO"
-                                    '"BAD"
-                                    '"BYE"
-                                    '"PREAUTH")) SP resp-text)
+  (resp-cond-data  :method 'cond-state
+                   :params (list resp-cond-state))
+  (resp-cond-state :state (or '"OK"
+                              '"NO"
+                              '"BAD"
+                              '"BYE"
+                              '"PREAUTH") SP resp-text)
   (resp-text (opt resp-text-code) text)
   (resp-text-code "["
-                  (cons
-                   'resp-code
-                   (list
-                    (or
-                     '"ALERT"
-                     '"PARSE"
-                     '"READ-ONLY"
-                     '"READ-WRITE"
-                     (cons '"BADCHARSET"
-                           (list (opt SP "(" astring
-                                      (* SP astring) ")")))
-                     capability-data
-                     (cons '"PERMANENTFLAGS" (and SP flag-list))
-                     (cons '"UIDNEXT" SP number)
-                     (cons '"UIDVALIDITY" SP number)
-                     (cons '"UNSEEN" SP number)
-                     (cons atom (opt SP (substring (+ (and (not "]")
-                                                           (any)))))))))
+                  :resp-code
+                  (or
+                   '"ALERT"
+                   '"PARSE"
+                   '"READ-ONLY"
+                   '"READ-WRITE"
+                   (and '"BADCHARSET"
+                         :charsets (list (opt SP "(" astring
+                                              (* SP astring) ")")))
+                   (and (if '"CAPABILITY") capability-data)
+                   (and '"PERMANENTFLAGS" SP :flags flag-list)
+                   (and '"UIDNEXT" SP :uidnext number)
+                   (and '"UIDVALIDITY" SP :uidvalidity number)
+                   (and '"UNSEEN" SP :unseen number)
+                   (and atom (opt :data SP (substring (+ (and (not "]")
+                                                              (any)))))))
                   "]" SP)
 
-  (capability-data (cons '"CAPABILITY"
-                         (list (+ SP ;; (or
-                                  ;;  (and "AUTH="
-                                  ;;       (cons 'AUTH atom)))
+  (capability-data "CAPABILITY"
+                   :capabilities
+                   (list 'param
+                         (list (+ SP ;; (or (and "AUTH=" (cons 'AUTH
+                                  ;; atom)))
                                   atom))))
 
   (flag-list "(" (list (opt flag (* SP flag))) ")")
@@ -103,28 +106,32 @@
          ;; '"\\Recent"
          atom
          flag-extension))
-  (flag-extension "\\" atom `(s -- (concat "\\" s)))
+  (flag-extension "\\" atom `(s -- (downcase (concat "\\" s))))
 
 
 ;;; mailbox
 
-  (mailbox-data (cons 'data 'mailbox)
-                (or (cons '"FLAGS" SP flag-list)
-                    (cons '"LIST" SP mailbox-list)
-                    (cons '"LSUB" SP mailbox-list)
-                    (cons '"SEARCH" (list (* SP number)))
-                    (cons '"STATUS" SP mailbox SP "(" status-att-list ")")
-                    (cons 'EXISTS number SP "EXISTS")
-                    (cons 'RECENT number SP "RECENT")))
+  (mailbox-data :method
+                (or (and '"FLAGS" SP :flags flag-list)
+                    (and '"LIST" SP :mailbox-list mailbox-list)
+                    (and '"LSUB" SP :mailbox-list mailbox-list)
+                    (and '"SEARCH" :result (list (* SP number)))
+                    (and '"STATUS" SP mailbox
+                         SP "(" status-att-list ")")
+                    (and 'EXISTS :exists number SP "EXISTS")
+                    (and 'RECENT :recent number SP "RECENT")))
 
-  (mailbox-list "(" (opt (cons 'flags mbx-list-flags)) ")" SP
-                (cons'mboxsep (or (and "\"" (substring QUOTED-CHAR)
-                                       `(str -- (eimap/parse-unquote-string))
-                                       "\"")
-                                  =nil))
-                SP mailbox)
+  (mailbox-list (list
+                 "("
+                 (opt :flags mbx-list-flags)
+                 ")" SP
+                 :mboxsep (or (and "\"" (substring QUOTED-CHAR)
+                                   `(str -- (eimap/parse-unquote-string))
+                                   "\"")
+                              =nil)
+                 SP mailbox))
 
-  (mailbox (cons 'mailbox astring))
+  (mailbox :mailbox astring)
   (mbx-list-flags (list mbx-list-flag (* SP mbx-list-flag)))
   (mbx-list-flag (or ;; '"\\Noinferiors"
                   ;; '"\\Noselect"
@@ -132,79 +139,81 @@
                   ;; '"\\Unmarked"
                   flag-extension))
 
-  (status-att-list (cons 'att
-                         (list status-att-pair (* SP status-att-pair))))
-  (status-att-pair (cons (or '"MESSAGES"
-                             '"RECENT"
-                             '"UIDNEXT"
-                             '"UIDVALIDITY"
-                             '"UNSEEN")
-                         SP number))
+  (status-att-list status-att-pair (* SP status-att-pair))
+  (status-att-pair (or (and "MESSAGES" :messages)
+                       (and "RECENT" :recent)
+                       (and "UIDNEXT" :uidnext)
+                       (and "UIDVALIDITY" :uidvalidity)
+                       (and "UNSEEN" :unseen))
+                    SP number)
 
 
 ;;; message data
-  (message-data (cons 'data 'message)
-                (cons 'msgid number) SP
-                (or (cons 'action'"EXPUNGE")
-                    (and (cons 'action'"FETCH") SP msg-att)))
+  (message-data :msgid number SP
+                :method
+                (or '"EXPUNGE"
+                    (and '"FETCH" SP msg-att)))
   (msg-att "(" (or msg-att-dynamic
                    msg-att-static)
            (* SP (or msg-att-dynamic
                      msg-att-static))
            ")")
-  (msg-att-dynamic (cons '"FLAGS" SP flag-list))
-  (msg-att-static (or (cons '"ENVELOPE" SP envelope)
-                      (cons '"INTERNALDATE" SP quoted)
-                      (cons '"RFC822" SP nstring)
-                      (cons '"RFC822.HEADER" SP nstring)
-                      (cons '"RFC822.TEXT" SP nstring)
-                      (cons '"RFC822.SIZE" SP number)
-                      (cons '"BODY" SP body)
-                      (cons '"BODYSTRUCTURE" SP body)
-                      (and (cons 'bodysection "BODY" section)
-                           (opt (cons 'offset  "<" number ">")) SP
-                           (cons 'data nstring))
-                      (cons '"UID" SP number)
+  (msg-att-dynamic (and "FLAGS" SP :flags flag-list))
+  (msg-att-static (or (and "ENVELOPE" SP :envelope envelope)
+                      (and "INTERNALDATE" SP :internaldate quoted)
+                      (and "RFC822" SP :rfc822 nstring)
+                      (and "RFC822.HEADER" SP :rfc822.header nstring)
+                      (and "RFC822.TEXT" SP :rfc822.text nstring)
+                      (and "RFC822.SIZE" SP :rfc822.size number)
+                      (and "BODY" SP :body body)
+                      (and "BODYSTRUCTURE" SP :bodystructure body)
+                      (and "BODY" :bodydata
+                           (list section
+                                 (opt :offset  "<" number ">") SP
+                                 :data nstring))
+                      (and "UID" SP :uid number)
                       ))
-  (section "[" (opt section-spec) "]")
+  (section "[" (opt :section (list section-spec)) "]")
   (section-spec (or section-msgtext
-                    (and section-part (opt "." section-text))))
+                    (and :part section-part (opt "." section-text))))
   (section-part number (* "." number))
-  (section-msgtext (or '"HEADER"
-                       (and (cons (or '"HEADER.FIELDS"
-                                      '"HEADER.FIELDS.NOT")
-                                  SP header-list))
-                       "TEXT"))
+  (section-msgtext :text
+                   (or '"HEADER"
+                       (and (or '"HEADER.FIELDS"
+                                 '"HEADER.FIELDS.NOT")
+                             SP :header-list header-list)
+                       '"TEXT"))
   (section-text (or section-msgtext
-                    '"MIME"))
-  (header-list "(" astring (* SP astring) ")")
+                    :text '"MIME"))
+  (header-list "(" (list astring (* SP astring)) ")")
 
   (envelope "("
-            (cons 'date nstring SP)
-            (cons 'subject nstring SP)
-            (cons 'from env-addr-list SP)
-            (cons 'sender env-addr-list SP)
-            (cons 'reply-to env-addr-list SP)
-            (cons 'to env-addr-list SP)
-            (cons 'cc env-addr-list SP)
-            (cons 'bcc env-addr-list SP)
-            (cons 'in-reply-to nstring SP)
-            (cons 'message-id nstring)
+            (list
+             :date nstring SP
+             :subject nstring SP
+             :from env-addr-list SP
+             :sender env-addr-list SP
+             :reply-to env-addr-list SP
+             :to env-addr-list SP
+             :cc env-addr-list SP
+             :bcc env-addr-list SP
+             :in-reply-to nstring SP
+             :message-id nstring)
             ")")
   (env-addr-list (or (and "(" (list (+ address)) ")")
                      =nil))
   (address "("
            (list
-            (cons 'name nstring SP)
-            (cons 'adl nstring SP)
-            (cons 'mailbox nstring SP)
-            (cons 'host nstring))
+            :name nstring SP
+            :adl nstring SP
+            :mailbox nstring SP
+            :host nstring)
            ")")
 
 ;;; body
 
-  (body "(" (or body-type-1part
-                body-type-mpart) ")")
+  (body "(" (list (or body-type-1part
+                      body-type-mpart)) ")")
   (body-type-1part (or body-type-text
                                         ;body-type-msg
                                         ;body-type-basic
@@ -216,34 +225,37 @@
   (body-type-mpart "XXX")
 
   (body-type-text (if "\"TEXT\"" SP)
-                  mime-type SP body-fields SP (cons 'lines number))
+                  mime-type SP body-fields SP :lines number)
 
   (body-type-msg "XXX")
   (body-type-basic "XXX")
 
-  (mime-type (cons 'mime quoted SP quoted))
+  (mime-type :mime-type quoted SP quoted
+             `(a b -- `(,a . ,b)))
   (body-fields body-fld-param SP
                body-fld-id SP
                body-fld-desc SP
                body-fld-enc SP
                body-fld-octets)
-  (body-fld-param (cons 'param (or (and "(" string-pair-list ")")
-                                   =nil)))
-  (body-fld-id (cons 'id nstring))
-  (body-fld-desc (cons 'desc nstring))
-  (body-fld-enc (cons 'enc string))
-  (body-fld-octets (cons 'octets number))
+  (body-fld-param :param
+                  (or (and "(" string-pair-list ")")
+                      =nil))
+  (body-fld-id :id nstring)
+  (body-fld-desc :desc nstring)
+  (body-fld-enc :enc string)
+  (body-fld-octets :octets number)
 
 
 
 ;;; data extraction
 
   (string-pair-list (list string-pair (* SP string-pair)))
-  (string-pair (cons string SP string))
+  (string-pair string SP string
+               `(a b -- `(,a . ,b)))
 
   (=nil "NIL" `(-- nil))
 
-  (text (cons 'text (substring (+ TEXT-CHAR))))
+  (text :text (substring (+ TEXT-CHAR)))
   (atom (substring (+ ATOM-CHAR)))
   (tag (substring (+ (not "+") ASTRING-CHAR)))
   (astring (or (substring (+ ASTRING-CHAR))
