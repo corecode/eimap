@@ -231,6 +231,8 @@ Note: a PE can't \"call\" rules by name."
 	 (let ((len (length exp)))
 	   (cond ((zerop len) '(null))
 		 (t `(str ,exp)))))
+	((keywordp exp)
+	 (peg-normalize `(stack-action (-- ',exp))))
 	((and (symbolp exp) exp)
 	 (when (not (gethash exp peg-rules))
 	   (error "Reference to undefined PEG rule: %S" exp))
