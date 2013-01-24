@@ -387,7 +387,7 @@ Note: a PE can't \"call\" rules by name."
 (peg-add-method normalize quote (form)
   (cond
    ((stringp form)
-    (peg-normalize `(and ,form (stack-action (-- ',(make-symbol form))))))
+    (peg-normalize `(and ,form (stack-action (-- ',(intern form))))))
    ((symbolp form)
     (peg-normalize `(stack-action (-- ',form))))
    (t
