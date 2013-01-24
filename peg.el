@@ -230,7 +230,6 @@ Note: a PE can't \"call\" rules by name."
 	((stringp exp)
 	 (let ((len (length exp)))
 	   (cond ((zerop len) '(null))
-		 ((= len 1) `(char ,(aref exp 0)))
 		 (t `(str ,exp)))))
 	((and (symbolp exp) exp)
 	 (when (not (gethash exp peg-rules))
