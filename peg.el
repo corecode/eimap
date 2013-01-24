@@ -237,8 +237,6 @@ Note: a PE can't \"call\" rules by name."
 	 `(call ,exp))
 	((vectorp exp)
 	 (peg-normalize `(set . ,(append exp '()))))
-	((listp exp)
-	 (peg-normalize `(cons ,(car exp) ,(cdr exp))))
 	(t
 	 (error "Invalid parsing expression: %S" exp))))
 
