@@ -117,12 +117,11 @@ active."
          (when (null cont-handler)
            (error "Continuation without handler for request data %S" tag-data))
          ;; we pass on the returned data to the next handler
-         (let ((cbdata (funcall cont-handler params cbdata))
-               (new-tag-data (plist-put tag-data :cbdata cbdata)))
-           (setcdr tag-record new-tag-data))))
+         (let ((new-cbdata (funcall cont-handler params new-cbdata)))
+           (setcdr tag-record (plist-put tag-data :cbdata new-cbdata)))))
       ('data
-       (let* ((handler (gethash method eimap-method-dispatch-table))
-              (handler-params (plist-get params :params)))
+       (let ((handler (gethash method eimap-method-dispatch-table))
+             (handler-params (plist-get params :params)))
          (apply handler (list params handler-params))))
       ('tag
        (let* ((tag (plist-get params :tag))
@@ -132,25 +131,26 @@ active."
               (cbdata (plist-get tag-data :cbdata)))
          (when done-handler
            (funcall done-handler params cbdata))
-         (setq eimap-outstanding-tags (delq tag-record eimap-outstanding-tags)))))))
+         (setq eimap-outstanding-tags (delq tag-record eimap-outstanding-tags))
+         (setq eimap-continue-tags (pop eimap-continue-tags)))))))
 
 (eimap-define-method cond-state (data params)
   (let ((state (plist-get data :state))
         (resp-code (plist-get data :resp-code)))
     (case resp-code
-      (CAPABILITY
+      ('CAPABILITY
        (setq eimap-capabilities (plist-get params :capabilities)
              eimap-auth-methods (plist-get params :auth))))
     (case state
-      (OK
+      ('OK
        (when (eq eimap-state 'connecting)
          (eimap-authenticate)))
-      (PREAUTH
+      ('PREAUTH
        (when (eq state 'PREAUTH)
          (setq eimap-state 'authenticated)))
-      (BYE
+      ('BYE
        (message "server closing connection: %s" (plist-get params :text)))
-      ((BAD NO)
+      (('BAD 'NO)
        (warn "server unhappy: %s")))))
 
 (defun eimap-authenticate ()
