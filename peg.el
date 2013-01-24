@@ -230,16 +230,15 @@ Note: a PE can't \"call\" rules by name."
 	((stringp exp)
 	 (let ((len (length exp)))
 	   (cond ((zerop len) '(null))
-		 ((= len 1) `(char ,(aref exp 0)))
 		 (t `(str ,exp)))))
+	((keywordp exp)
+	 (peg-normalize `(stack-action (-- ',exp))))
 	((and (symbolp exp) exp)
 	 (when (not (gethash exp peg-rules))
 	   (error "Reference to undefined PEG rule: %S" exp))
 	 `(call ,exp))
 	((vectorp exp)
 	 (peg-normalize `(set . ,(append exp '()))))
-	((listp exp)
-	 (peg-normalize `(cons ,(car exp) ,(cdr exp))))
 	(t
 	 (error "Invalid parsing expression: %S" exp))))
 
@@ -390,7 +389,7 @@ Note: a PE can't \"call\" rules by name."
 (peg-add-method normalize quote (form)
   (cond
    ((stringp form)
-    (peg-normalize `(and ,form (stack-action (-- ',(make-symbol form))))))
+    (peg-normalize `(and ,form (stack-action (-- ',(intern form))))))
    ((symbolp form)
     (peg-normalize `(stack-action (-- ',form))))
    (t
