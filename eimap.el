@@ -89,10 +89,12 @@ active."
 
 
 (defun eimap-new-tag ()
+  "Generate new IMAP tag"
   (setq eimap-tag (1+ eimap-tag))
   (concat "e" (number-to-string eimap-tag)))
 
 (defun* eimap-request (string &rest data &key continue done cbdata)
+  "Tag request and setup callback hooks"
   (let* ((tag (eimap-new-tag))
          (tag-record (cons tag data)))
     (add-to-list 'eimap-outstanding-tags tag-record)
@@ -135,6 +137,7 @@ active."
          (setq eimap-continue-tags (pop eimap-continue-tags)))))))
 
 (eimap-define-method cond-state (data params)
+  "Handle untagged OK/NO/BAD/BYE/PREAUTH messages"
   (let ((state (plist-get data :state))
         (resp-code (plist-get data :resp-code)))
     (case resp-code
@@ -154,6 +157,7 @@ active."
        (warn "server unhappy: %s")))))
 
 (defun eimap-authenticate ()
+  "Initiate authentication"
   (if (null eimap-auth-methods)
       (eimap-request "CAPABILITY")
     (let ((mech (sasl-find-mechanism eimap-auth-methods)))
@@ -168,6 +172,8 @@ active."
                        :cbdata (list :client client :steps steps))))))
 
 (defun eimap-auth-steps (params data)
+  "Walk through SASL steps.  Data we return will be passed as
+argument in the next step."
   (let* ((text (plist-get params :text))
          (decoded (base64-decode-string text))
          (client (plist-get data :client))
@@ -182,18 +188,10 @@ active."
     (setq data (plist-put data :authtok eimap-authtok))
     data))
 
-(defun eimap-auth-done (params data)
-  (case (plist-get params :state)
-    (OK
-     (let* ((authtok (plist-get data :authtok))
-            (pw-save-fun (plist-get authtok :save-function)))
-       (when pw-save-fun
-         (funcall pw-save-fun)))
-     (message "auth successful: %s" (plist-get params :text)))
-    (t
-     (error "auth fail: %s" (plist-get params :text)))))
-
 (defun eimap-read-pass (prompt)
+  "Callback from SASL to read the passphrase.  Instead of
+prompting the user, we ask auth-source to return passphrase or
+prompt."
   (let ((authtok (car (auth-source-search :host eimap-host
                                           :port eimap-port
                                           :user eimap-user
@@ -209,3 +207,18 @@ active."
        (if (functionp secret)
            (funcall secret)
          secret)))))
+
+(defun eimap-auth-done (params data)
+  "Authentication completed.  Give auth-source a chance to store
+the password.
+
+XXX maybe detect if password was cached and discard on error?"
+  (case (plist-get params :state)
+    (OK
+     (let* ((authtok (plist-get data :authtok))
+            (pw-save-fun (plist-get authtok :save-function)))
+       (when pw-save-fun
+         (funcall pw-save-fun)))
+     (message "auth successful: %s" (plist-get params :text)))
+    (t
+     (error "auth fail: %s" (plist-get params :text)))))
