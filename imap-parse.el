@@ -1,266 +1,340 @@
-(defun eimap/slurp-literal (args)
-  (lexical-let*
-      ((match (car args))
-       (lenmatch (cadr args))
-       (lenstr (parser-extract-string lenmatch))
-       (len (string-to-number lenstr))
-       (matchstart (car match))
-       (litstart (cdr match))
-       (litend (+ litstart len))
-       (literal (parser-extract-string (cons litstart litend))))
-    ;; HACK:
-    ;; set matchdata 0 so that the parser can jump over the literal
-    (set-match-data (list matchstart litend))
-    literal))
+(require 'peg)
+(require 'dash)
 
-(defun eimap/parse-unqote-string (args)
-  (if (listp (car args))
-      (mapcar 'eimap/parse-unqote-string args)
-    (lexical-let
-        ((qstr (parser-extract-string args)))
-      (replace-regexp-in-string "\\\\\\(.\\)" "\\1" qstr))))
+(defun eimap-parse-unquote-string (str)
+  (replace-regexp-in-string "\\\\\\(.\\)" "\\1" str))
 
-(defun eimap/parse-number (args)
-  (if (listp (car args))
-      (mapcar 'eimap/parse-number args)
-    (lexical-let
-        ((str (parser-extract-string args)))
-      (string-to-number str 10))))
+(peg-add-method normalize literalstr ()
+  `(literalstr))
+
+(peg-add-method translate literalstr ()
+  `(when (looking-at "{\\([0-9]+\\)}\x0d\x0a")
+     (let* ((litlen (string-to-number (match-string 1)))
+            (litstart (match-end 0))
+            (litend (+ litstart litlen)))
+       (when (>= (point-max) litend)
+         (goto-char litstart)
+         ,(peg-translate-exp '(action (push (point) peg-stack)))
+         (goto-char litend)
+         ,(peg-translate-exp '(action
+                               (push (buffer-substring-no-properties (pop peg-stack)
+                                                                     (point)) peg-stack)))))))
+
+(peg-add-method detect-cycles literalstr (path) nil)
+(peg-add-method merge-error literalstr (merged)
+  "IMAP literal")
 
 
-(parser-define
- 'imap
- (parser-compile
-  (define
-    (/token SP " " null)
-    (/token CRLF "\x0d\x0a" null)
+(defmacro eimap-defparse (funname &rest rules)
+  (declare (indent 1))
+  (let ((parser (peg-translate-rules rules)))
+    `(defun ,funname ()
+                                        ;,(pp parser)
+       (let* ((case-fold-search t)
+              (result ,parser))
+         (reverse result)))))
 
-    (/token LBRACK "\\[" null)
-    (/token RBRACK "]" null)
-    (/token LPAREN "(" null)
-    (/token RPAREN ")" null)
-    (/token LANGL "<" null)
-    (/token RANGL ">" null)
 
-    (/token NIL)
+(eval-when-compile
+  (eimap-defparse eimap-parse
 
-    (/token number "[0-9]+" 0 eimap/parse-number)
+;;; responses
 
-    (/token tag "[^]\x00-\x1f\x7f){ %*\"\\]+" 0 parser-token-string)
+    (response (or continue-req
+                  response-data
+                  response-tagged))
 
-    (/token atom "[^]\x00-\x1f\x7f){ %*\"\\]+" 0 parser-token-string)
-    (/token literal "{\\([0-9]+\\)}\x0d\x0a" (0 1) eimap/slurp-literal)
-    (/token quoted "\"\\(\\(?:[^\x0d\x0a\\\"]*\\|\\\\[\\\"]\\)*\\)\""
-            1 eimap/parse-unqote-string)
-    (/production string
-                 (/or quoted
-                      literal))
-    (/production astring
-                 (/or (/token string- "[^\x00-\x1f\x7f){ %*\"\\]+"
-                              0 parser-token-string)
-                      string))
-    (/production nstring
-                 (/or string
-                      NIL))
+    (continue-req  :type 'continue
+                   :params (list "+" SP resp-text CRLF))
 
-    (/token text "[^\x0d\x0a]+" 0 parser-token-string)
+    (response-tagged :type 'tag
+                     :params (list :tag tag SP resp-cond-state CRLF))
 
-    (/token flag "\\\\?[^]\x00-\x1f\x7f){ %*\"\\]+" 0 parser-token-string)
-    (/production flag-list
-                 LPAREN
-                 (/always-match (flag (/always-match (/greedy (SP flag)))))
-                 RPAREN)
+    (response-data :type 'data
+                   "*" SP
+                   (or resp-cond-data
+                       mailbox-data
+                       message-data
+                       capability-data) CRLF)
 
-    (/production hiersep
-                 (/or (/token hiersep-1 "\"\\([^\x0d\x0a\\\"]\|\\[\\\"]\\)\""
-                              1 eimap/parse-unqote-string)
-                      NIL))
-    (/production mailbox-list
-                 LPAREN mbx-list-flags RPAREN SP
-                 hiersep SP (/or (/token INBOX)
-                                 astring))
 
-    (/production status-att-pair
-                 (/or (/token MESSAGES)
-                      (/token RECENT)
-                      (/token UIDNEXT)
-                      (/token UIDVALIDITY)
-                      (/token UNSEEN))
-                 SP number)
-    (/production status-att-list
-                 status-att-pair
-                 (/always-match /greedy (SP status-att-pair)))
+;;; response status and code
 
-    (/production mailbox-data
-                 (/or ((/token FLAGS) SP flag-list)
-                      ((/token LIST) SP mailbox-list)
-                      ((/token LSUB) SP mailbox-list)
-                      ((/token SEARCH) (/always-match /greedy (SP number)))
-                      ((/token STATUS) SP mailbox SP LPAREN status-att-list RPAREN)
-                      ((/production exists-count
-                                    number SP "EXISTS")
-                       (/production recent-count
-                                    number SP "RECENT"))))
+    (resp-cond-data  :method 'cond-state
+                     :params (list resp-cond-state))
+    (resp-cond-state :state (or '"OK"
+                                '"NO"
+                                '"BAD"
+                                '"BYE"
+                                '"PREAUTH") SP resp-text)
+    (resp-text (opt resp-text-code) text)
+    (resp-text-code "["
+                    :resp-code
+                    (or
+                     '"ALERT"
+                     '"PARSE"
+                     '"READ-ONLY"
+                     '"READ-WRITE"
+                     (and '"BADCHARSET"
+                          :params
+                          (list
+                           :charsets (list (opt SP "(" astring
+                                                (* SP astring) ")"))))
+                     capability-data
+                     (and '"PERMANENTFLAGS" SP
+                          :params (list :flags flag-list))
+                     (and '"UIDNEXT" SP
+                          :params (list :uidnext number))
+                     (and '"UIDVALIDITY" SP
+                          :params (list :uidvalidity number))
+                     (and '"UNSEEN" SP
+                          :params (list :unseen number))
+                     (and atom
+                          :params (list (opt :data SP
+                                             (substring (+ (and (not "]")
+                                                                (any))))))))
+                    "]" SP)
 
-    (/production env-addr-list
-                 (/or (LPAREN (/greedy address) RPAREN)
-                      NIL))
-    (/alias env-bcc env-addr-list)
-    (/alias env-cc env-addr-list)
-    (/alias env-from env-addr-list)
-    (/alias env-reply-to env-addr-list)
-    (/alias env-sender env-addr-list)
-    (/alias env-to env-addr-list)
-    (/alias env-date nstring)
-    (/alias env-subject nstring)
-    (/alias env-message-id nstring)
+    (capability-data '"CAPABILITY"
+                     :params
+                     (list
+                      :capabilities
+                      (list (+ SP ;; (or (and "AUTH=" (cons 'AUTH
+                               ;; atom)))
+                               atom))
+                      `(l --
+                          (delq nil (mapcar
+                                     (lambda (e)
+                                       (unless (string-match "^AUTH=" e)
+                                         (upcase e)))
+                                     l))
+                          :auth
+                          (delq nil (mapcar
+                                     (lambda (e)
+                                       (when (string-match "^AUTH=\\(.*\\)" e)
+                                         (upcase (match-string 1 e))))
+                                     l)))))
 
-    (/production envelope
-                 LPAREN env-date SP env-subject SP env-from SP
-                 env-sender SP env-reply-to SP env-to SP env-cc SP
-                 env-bcc SP env-in-reply-to SP env-message-id RPAREN)
-    (/alias date-time quoted)
+    (flag-list "(" (list (opt flag (* SP flag))) ")")
+    (flag (or ;; '"\\Answered"
+           ;; '"\\Flagged"
+           ;; '"\\Deleted"
+           ;; '"\\Seen"
+           ;; '"\\Draft"
+           ;; '"\\Recent"
+           atom
+           flag-extension))
+    (flag-extension "\\" atom `(s -- (downcase (concat "\\" s))))
 
-    (/production media-message
-                 DQUOTE (/token MESSAGE "MESSAGE" 0 parser-token-string) DQUOTE
-                 SP DQUOTE (/token RFC822- "RFC822" 0 parser-token-string) DQUOTE)
-    (/production media-text
-                 DQUOTE (/token TEXT "TEXT" 0 parser-token-string) DQUOTE
-                 SP string)
-    (/production media-basic
-                 string SP string)
 
-    (/production body-fld-param-pair
-                 string SP string)
-    (/production body-fld-param
-                 (/or (LPAREN
-                       body-fld-param-pair
-                       (/always-match /greedy (SP body-fld-param-pair))
-                       RPAREN)
-                      NIL))
-    (/alias body-fld-id nstring)
-    (/alias body-fld-desc nstring)
-    (/alias body-fld-end string)
-    (/alias body-fld-octets number)
-    (/production body-fields
-                 body-fld-param SP body-fld-id SP body-fld-desc SP
-                 body-fld-enc SP body-fld-octets)
-    (/alias body-fld-lines number)
-    (/production body-type-msg
-                 media-message SP body-fields SP envelope
-                 SP body SP body-fld-lines)
-    (/production body-type-text
-                 media-text SP body-fields SP body-fld-lines)
-    (/production body-type-basic
-                 media-basic SP body-fields)
-    (/alias body-fld-md5 nstring)
-    (/production body-fld-dsp
-                 (/or (LPAREN string SP body-fld-param RPAREN)
-                      NIL))
-    (/production body-fld-lang
-                 (/or nstring
-                      (LPAREN string (/always-match /greedy (SP string)) RPAREN)))
-    (/alias body-fld-loc nstring)
-    (/production body-extension
-                 (/or nstring
-                      number
-                      (LPAREN body-extension (/always-match /greedy body-extension) RPAREN)))
-    (/production body-ext-1part
-                 body-fld-md5
-                 (/always-match (SP body-fld-dsp
-                                    (/always-match (SP body-fld-lang
-                                                       (/always-match (SP body-fld-loc
-                                                                          (/always-match /greedy (SP body-extension)))))))))
-    (/production body-type-1part
-                 (/or body-type-msg
-                      body-type-text
-                      body-type-basic)
-                 (/always-match (SP body-ext-1part)))
-    (/production body-ext-mpart
-                 body-fld-param
-                 (/always-match (SP body-fld-dsp
-                                    (/always-match (SP body-fld-lang
-                                                       (/always-match (SP body-fld-loc
-                                                                          (/always-match /greedy (SP body-extension)))))))))
-    (/production body-type-mpart
-                 /greedy body SP string
-                 (/always-match (SP body-ext-mpart)))
-    (/production body
-                 LPAREN (/or body-type-1part
-                             body-type-mpart) RPAREN)
+;;; mailbox
 
-    (/production msg-att-static
-                 (/or ((/token ENVELOPE) SP envelope)
-                      ((/token INTERNALDATE) SP date-time)
-                      ((/token RFC822) (/always-match (/or (/token .HEADER)
-                                                           (/token .TEXT))) SP nstring)
-                      ((/token RFC822.SIZE) SP number)
-                      ((/token BODY) (/always-match /token STRUCTURE) SP body)
-                      (BODY section (/always-match (LANGL number RANGL)) SP nstring)
-                      ((/token UID) SP number)))
-    (/production msg-att
-                 LPAREN
-                 (/or msg-att-dynamic
-                      msg-att-static)
-                 (/always-match /greedy (SP (/or msg-att-dynamic
-                                                 msg-att-static)))
-                 RPAREN)
+    (mailbox-data :method
+                  (or (and '"FLAGS" SP
+                           :params (list :flags flag-list))
+                      (and '"LIST" SP
+                           :params (list :mailbox-list mailbox-list))
+                      (and '"LSUB" SP
+                           :params (list :mailbox-list mailbox-list))
+                      (and '"SEARCH"
+                           :params (list :result (list (* SP number))))
+                      (and '"STATUS" SP
+                           :params (list mailbox
+                                         SP "(" status-att-list ")"))
+                      (and 'EXISTS
+                           :params (list :exists number SP "EXISTS"))
+                      (and 'RECENT
+                           :params (list :recent number SP "RECENT"))))
 
-    (/production message-data
-                 number SP (/or (/token EXPUNGE)
-                                ((/token FETCH) SP msg-att)))
+    (mailbox-list (list
+                   "("
+                   (opt :flags mbx-list-flags)
+                   ")" SP
+                   :mboxsep (or (and "\"" (substring QUOTED-CHAR)
+                                     `(str -- (eimap-parse-unquote-string))
+                                     "\"")
+                                =nil)
+                   SP mailbox))
 
-    (/production capability-data
-                 "CAPABILITY"
-                 (/greedy (SP (/or (/production AUTH "AUTH=" atom)
-                                   atom))))
+    (mailbox :mailbox astring)
+    (mbx-list-flags (list mbx-list-flag (* SP mbx-list-flag)))
+    (mbx-list-flag (or ;; '"\\Noinferiors"
+                    ;; '"\\Noselect"
+                    ;; '"\\Marked"
+                    ;; '"\\Unmarked"
+                    flag-extension))
 
-    (/production resp-text-code
-                 LBRACK
-                 (/or (/token ALERT)
+    (status-att-list status-att-pair (* SP status-att-pair))
+    (status-att-pair (or (and "MESSAGES" :messages)
+                         (and "RECENT" :recent)
+                         (and "UIDNEXT" :uidnext)
+                         (and "UIDVALIDITY" :uidvalidity)
+                         (and "UNSEEN" :unseen))
+                     SP number)
 
-                      ((/token BADCHARSET) (/always-match (SP
-                                                           LPAREN
-                                                           astring (/always-match /greedy (SP astring))
-                                                           RPAREN)))
 
-                      capability-data
-                      (/token PARSE)
+;;; message data
+    (message-data :method
+                  (or (and :method 'EXPUNGE
+                           :params (list :msgid number SP "EXPUNGE"))
+                      (and :method 'FETCH
+                           :params (list :msgid number SP "FETCH" SP msg-att))))
+    (msg-att "(" (or msg-att-dynamic
+                     msg-att-static)
+             (* SP (or msg-att-dynamic
+                       msg-att-static))
+             ")")
+    (msg-att-dynamic (and "FLAGS" SP :flags flag-list))
+    (msg-att-static (or (and "ENVELOPE" SP :envelope envelope)
+                        (and "INTERNALDATE" SP :internaldate quoted)
+                        (and "RFC822" SP :rfc822 nstring)
+                        (and "RFC822.HEADER" SP :rfc822.header nstring)
+                        (and "RFC822.TEXT" SP :rfc822.text nstring)
+                        (and "RFC822.SIZE" SP :rfc822.size number)
+                        (and "BODY" SP :body body)
+                        (and "BODYSTRUCTURE" SP :bodystructure body)
+                        (and "BODY" :bodydata
+                             (list section
+                                   (opt :offset  "<" number ">") SP
+                                   :data nstring))
+                        (and "UID" SP :uid number)
+                        ))
+    (section "[" (opt :section (list section-spec)) "]")
+    (section-spec (or section-msgtext
+                      (and :part section-part (opt "." section-text))))
+    (section-part number (* "." number))
+    (section-msgtext :text
+                     (or '"HEADER"
+                         (and (or '"HEADER.FIELDS"
+                                  '"HEADER.FIELDS.NOT")
+                              SP :header-list header-list)
+                         '"TEXT"))
+    (section-text (or section-msgtext
+                      :text '"MIME"))
+    (header-list "(" (list astring (* SP astring)) ")")
 
-                      ((/token PERMANENTFLAGS) (SP
-                                                LPAREN
-                                                (flag-perm (/always-match /greedy (SP flag-perm)))
-                                                RPAREN))
+    (envelope "("
+              (list
+               :date nstring SP
+               :subject nstring SP
+               :from env-addr-list SP
+               :sender env-addr-list SP
+               :reply-to env-addr-list SP
+               :to env-addr-list SP
+               :cc env-addr-list SP
+               :bcc env-addr-list SP
+               :in-reply-to nstring SP
+               :message-id nstring)
+              ")")
+    (env-addr-list (or (and "(" (list (+ address)) ")")
+                       =nil))
+    (address "("
+             (list
+              :name nstring SP
+              :adl nstring SP
+              :mailbox nstring SP
+              :host nstring)
+             ")")
 
-                      (/token READ-ONLY)
-                      (/token READ-WRITE)
-                      (/token TRYCREATE)
-                      (UIDNEXT SP number)
-                      (UIDVALIDITY SP number)
-                      (UNSEEN SP number)
-                      (atom (/always-match (SP (/token resp-text-code-text "[^]]+" 0 parser-token-string)))))
-                 RBRACK SP)
+;;; body
 
-    (/production resp-text
-                 (/always-match resp-text-code) text)
-    (/production resp-cond-state
-                 (/or (/token OK)
-                      (/token NO)
-                      (/token BAD)) SP resp-text)
-    (/production response-data
-                 "*" SP (/or resp-cond-state
-                             resp-cond-bye
-                             mailbox-data
-                             message-data
-                             capability-data) CRLF)
-    (/production resp-cond-bye
-                 (/token BYE) SP resp-text)
-    (/production response-tagged
-                 tag SP resp-cond-state CRLF)
-    (/production continue-req
-                 "+" SP resp-text CRLF)
-    (/production response
-                 (/or continue-req
-                      response-data
-                      response-tagged)))
-  response))
+    (body "(" (list (or body-type-1part
+                        body-type-mpart)) ")")
+    (body-type-1part (or body-type-text
+                         body-type-msg
+                         body-type-basic)
+                     (opt SP body-ext-1part))
+    (body-type-mpart :mpart (list (+ body)) SP :subtype string
+                     (opt SP body-ext-mpart))
+
+    (body-type-text (if "\"TEXT\"" SP)
+                    mime-type SP body-fields SP body-fld-lines)
+
+    (body-type-msg (if "\"MESSAGE\"" SP "\"RFC822\"" SP)
+                   mime-type SP body-fields SP
+                   :message (list :envelope envelope SP :body body SP)
+                   body-fld-lines)
+    (body-type-basic mime-type SP body-fields)
+
+    (mime-type :mime-type quoted SP quoted
+               `(a b -- `(,a . ,b)))
+    (body-fields body-fld-param SP
+                 body-fld-id SP
+                 body-fld-desc SP
+                 body-fld-enc SP
+                 body-fld-octets)
+    (body-fld-param :param
+                    (or (and "(" string-pair-list ")")
+                        =nil))
+    (body-fld-id :id nstring)
+    (body-fld-desc :desc nstring)
+    (body-fld-enc :enc string)
+    (body-fld-octets :octets number)
+    (body-fld-lines :lines number)
+
+    (body-ext-1part body-fld-md5
+                    (opt SP body-fld-dsp
+                         (opt SP body-fld-lang
+                              (opt SP body-fld-loc
+                                   (* SP body-extension)))))
+    (body-ext-mpart body-fld-param
+                    (opt SP body-fld-dsp
+                         (opt SP body-fld-lang
+                              (opt SP body-fld-loc
+                                   (* SP body-extension)))))
+
+    (body-fld-md5 :md5 string)
+    (body-fld-dsp :disposition (or (cons "(" string SP body-fld-param ")")
+                                   =nil))
+    (body-fld-lang :lang (or =nil
+                             (list (or string
+                                       (and "(" string (* SP string) ")")))))
+    (body-fld-loc :loc nstring)
+    (body-extension :extension
+                    (or nstring
+                        number
+                        (and "(" body-extension (* SP body-extension) ")")))
+
+
+
+;;; data extraction
+
+    (string-pair-list (list string-pair (* SP string-pair)))
+    (string-pair string SP string
+                 `(a b -- `(,a . ,b)))
+
+    (=nil "NIL" `(-- nil))
+
+    (text :text (substring (* TEXT-CHAR)))
+    (atom (substring (+ ATOM-CHAR)))
+    (tag (substring (+ (not "+") ASTRING-CHAR)))
+    (astring (or (substring (+ ASTRING-CHAR))
+                 string))
+    (string (or quoted
+                (literalstr)))
+    (nstring (or string
+                 =nil))
+    (quoted "\"" (substring (* QUOTED-CHAR)) `(str -- (eimap-parse-unquote-string str)) "\"")
+
+    (number (substring (+ [0-9])) `(str -- (string-to-number str)))
+
+
+;;; literals
+
+    (SP " ")
+    (CRLF "\x0d\x0a")
+    (resp-specials ["]"])
+    (list-wildcards ["%*"])
+    (atom-specials (or ["(){ " ?\x7f]
+                       (range 0 31)
+                       list-wildcards
+                       quoted-specials
+                       resp-specials))
+    (ATOM-CHAR (not atom-specials) (any))
+    (ASTRING-CHAR (or ATOM-CHAR
+                      resp-specials))
+    (TEXT-CHAR (not ["\x0d\x0a"]) (any))
+    (quoted-specials ["\\\""])
+    (QUOTED-CHAR (or (and (not quoted-specials) TEXT-CHAR)
+                     (and "\\" quoted-specials)))
+    ))
