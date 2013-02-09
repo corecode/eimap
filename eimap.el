@@ -1,5 +1,7 @@
 (require 'cl)
 (require 'sasl)
+(require 'eimap-parse)
+(require 'eimap-generate)
 
 (defvar eimap-method-dispatch-table)
 (setq eimap-method-dispatch-table (make-hash-table :size 20))

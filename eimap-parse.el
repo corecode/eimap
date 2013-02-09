@@ -337,3 +337,5 @@
     (QUOTED-CHAR (or (and (not quoted-specials) TEXT-CHAR)
                      (and "\\" quoted-specials)))
     ))
+
+(provide 'eimap-parse)

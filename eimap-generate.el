@@ -245,3 +245,5 @@
 ;;; (:method SEARCH :keys ((FROM . "foo") (NOT . (FROM . "foobar"))))
 
 ))
+
+(provide 'eimap-generate)
