@@ -67,7 +67,43 @@
             search
             store))
 
-   (search (fail))
+   (search '"SEARCH" (opt SP "CHARSET" SP :charset astring)
+           :keys (list (+ SP search-key)))
+   (search-key (or
+                (and :all 't "ALL")
+                (and :answered search-key-bool-prefix "ANSWERED")
+                (and :bcc "BCC" SP astring)
+                (and :before "BEFORE" SP date)
+                (and :body "BODY" SP astring)
+                (and :cc "CC" SP astring)
+                (and :deleted search-key-bool-prefix "DELETED")
+                (and :flagged search-key-bool-prefix "FLAGGED")
+                (and :from "FROM" SP astring)
+                (and :keyword (cons search-key-bool-prefix "KEYWORD" atom))
+                (and :new (or (and 't "NEW")
+                              (and 'nil "OLD")))
+                (and :on "ON" SP date)
+                (and :recent 't "RECENT")
+                (and :seen search-key-bool-prefix "SEEN")
+                (and :since "SINCE" SP date)
+                (and :subject "SUBJECT" SP astring)
+                (and :text "TEXT" SP astring)
+                (and :to "TO" SP astring)
+                (and :draft search-key-bool-prefix "DRAFT")
+                (and :header "HEADER" SP (cons astring SP astring))
+                (and :larger "LARGER" SP number)
+                (and :not "NOT" SP (list search-key))
+                (and :or "OR" SP (cons search-key search-key))
+                (and :sentbefore "SENTBEFORE" SP date)
+                (and :senton "SENTON" SP date)
+                (and :sentsince "SENTSINCE" SP date)
+                (and :smaller "SMALLER" SP number)
+                (and :uid SP sequence-set)
+                (and :message-id sequence-set)
+                (and "(" (list search-key) ")")
+                ))
+   (search-key-bool-prefix (or 't
+                               (and 'nil "UN")))
 
    (flag-list "(" (list (opt flag (* SP flag))) ")")
    (mailbox astring)
@@ -126,7 +162,7 @@
 
 ;;; data generation
 
-   (=nil (pred (null pred)) `(_ --) "NIL")
+   (=nil 'nil "NIL")
 
    (text :text (substring (* TEXT-CHAR)))
    (atom (substring (+ ATOM-CHAR)))
@@ -149,6 +185,7 @@
    (4base64-char base64-char base64-char base64-char base64-char)
    (base64-char [a-z A-Z 0-9 "+/"])
 
+   (date quoted)                        ; XXX
    (date-time quoted)                   ; XXX
    (list-mailbox (or (+ list-char)
                      string))
@@ -176,4 +213,6 @@
                     (and "\\" quoted-specials)))))
 
 (eimap-gen '(:tag "c0" :method AUTHENTICATE :auth-type "PLAIN" :auth-token "FOo="))
-;(eimap-gen (list :tag "c0"))
+;(eimap-gen (list :tag "c0"))p
+;;; (:method SEARCH :keys (:from "foo" :not (:from "foobar")))
+;;; (:method SEARCH :keys ((FROM . "foo") (NOT . (FROM . "foobar"))))
