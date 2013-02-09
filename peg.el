@@ -460,10 +460,12 @@ Note: a PE can't \"call\" rules by name."
 
 (defun peg-peek-current-list ()
   "Return the first element of the first list on the data stack."
-  (car (peg-thunks-stack)))
+  (caar (peg-thunks-stack)))
 
 (defun peg-push-current-list (data)
-  (peg-thunks-assemble (peg-thunks-strings) (cons data (peg-thunks-stack))))
+  (let* ((top-list (peg-pop-list-from-stack))
+         (new-list (cons data top-list)))
+    (peg-push-list-on-stack new-list)))
 
 (defun peg-push-str-on-stack (str)
   (peg-thunks-assemble (cons str (peg-thunks-strings)) (peg-thunks-stack)))
@@ -541,8 +543,8 @@ Note: a PE can't \"call\" rules by name."
     (error "Malformed stack action: %S" form))
   (let ((args (cdr (member '-- (reverse form))))
 	(values (cdr (member '-- form))))
-    (let ((form `(let ,(mapcar (lambda (var) `(,var (pop peg-pop-current-list))) args)
-		   ,@(mapcar (lambda (val) `(push ,val peg-push-current-list)) values))))
+    (let ((form `(let ,(mapcar (lambda (var) `(,var (peg-pop-current-list))) args)
+		   ,@(mapcar (lambda (val) `(peg-push-current-list ,val)) values))))
       `(action ,form))))
 
 ;; no region or replace types.
