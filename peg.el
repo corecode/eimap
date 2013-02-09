@@ -145,6 +145,14 @@
 Return (T STACK) if the match succeed and nil on failure."
   (peg-translate-rules rules))
 
+(defmacro peg-generate (data &rest rules)
+  "Use RULES to convert DATA to output string, written to the
+current buffer."
+  (declare (indent 1))
+  (let ((peg-creating-generator t)
+        (peg-generator-data data))
+    (peg-translate-rules rules)))
+
 (defmacro peg-parse-exp (exp)
   "Match the parsing expression EXP at point.
 Note: a PE can't \"call\" rules by name."
@@ -155,6 +163,13 @@ Note: a PE can't \"call\" rules by name."
 ;; A table of the PEG rules.  Used during compilation to resolve
 ;; references to named rules.
 (defvar peg-rules)
+
+;; A flag selecting whether we are producing a generator or a
+;; parser.  Used during compilation.
+(defvar peg-creating-generator nil)
+
+;; A flag whether the generator is in a substring expression
+(defvar peg-generator-in-substring nil)
 
 ;; used at runtime for backtracking.  It's a list ((POS . THUNK)...).
 ;; Each THUNK is executed at the corresponding POS.  Thunks are
@@ -193,14 +208,26 @@ Note: a PE can't \"call\" rules by name."
 			    (lambda ()
 			      ,(peg-translate-exp (gethash name peg-rules))))))
 		 rules)
-       (cond ((funcall ,(car (car rules)))
-	      (save-excursion
-		(peg-postprocess peg-thunks)))
-	     (t
-	      (goto-char (car peg-errors))
-	      (error "Parse error at %d (expecting %S)"
-		     (car peg-errors)
-		     (peg-merge-errors (cdr peg-errors))))))))
+       ,(if peg-creating-generator
+            `(with-temp-buffer
+               (set (make-local-variable 'peg-generator-in-substring) nil)
+               (peg-push-list-on-stack (list ,peg-generator-data))
+               (cond ((progn
+                        ,(peg-translate-exp (peg-normalize `(and (list ,(car (car rules)))))))
+                      (nreverse (car peg-thunks)))
+                     (t
+                      (peg-report-error))))
+          `(cond ((funcall ,(car (car rules)))
+                  (save-excursion
+                    (peg-postprocess peg-thunks)))
+                 (t
+                  (peg-report-error)))))))
+
+(defun peg-report-error ()
+  (goto-char (car peg-errors))
+  (error "Parse error at %d (expecting %S)"
+         (car peg-errors)
+         (peg-merge-errors (cdr peg-errors))))
 
 
 (eval-and-compile
@@ -224,15 +251,18 @@ Note: a PE can't \"call\" rules by name."
 (defun peg-normalize (exp)
   "Return a \"normalized\" form of EXP."
   (cond ((and (consp exp)
-	      (let ((fun (gethash (car exp) peg-normalize-methods)))
+	      (let* ((method-table (if peg-creating-generator
+                                       peg-normalize-generator-methods
+                                     peg-normalize-methods))
+                     (fun (gethash (car exp) method-table)))
 		(and fun
 		     (apply fun (cdr exp))))))
 	((stringp exp)
 	 (let ((len (length exp)))
 	   (cond ((zerop len) '(null))
-		 (t `(str ,exp)))))
+		 (t (peg-normalize `(str ,exp))))))
 	((keywordp exp)
-	 (peg-normalize `(stack-action (-- ',exp))))
+         (peg-normalize `(keyword ,exp)))
 	((and (symbolp exp) exp)
 	 (when (not (gethash exp peg-rules))
 	   (error "Reference to undefined PEG rule: %S" exp))
@@ -337,6 +367,9 @@ Note: a PE can't \"call\" rules by name."
       (characterp x)
     (integerp x)))
 
+(peg-add-method normalize keyword (exp)
+  (peg-normalize `(stack-action (-- ',exp))))
+
 (peg-add-method normalize list (&rest args)
   (peg-normalize
    (let ((marker (make-symbol "magic-marker")))
@@ -395,12 +428,140 @@ Note: a PE can't \"call\" rules by name."
    (t
     (error "Invalid form passed to quote %S" form))))
 
+;;;
+;;; data layout:
+;;; PEG-THUNKS is a CONS of (OUTPUT-STRINGS . INPUT-DATA)
+;;; INPUT-DATA is a LIST of LISTs (how the input tree gets unfolded)
+
+(defun peg-thunks-strings ()
+  (car peg-thunks))
+
+(defun peg-thunks-stack ()
+  (cdr peg-thunks))
+
+(defun peg-thunks-assemble (strings stack)
+  (setf peg-thunks (cons strings stack)))
+
+(defun peg-push-list-on-stack (new-list)
+  "Put NEW-LIST on the data stack."
+  (peg-thunks-assemble (peg-thunks-strings) (cons new-list (peg-thunks-stack))))
+
+(defun peg-pop-list-from-stack ()
+  "Remove and return a whole list from the data stack."
+  (prog1
+      (car (peg-thunks-stack))
+    (peg-thunks-assemble (peg-thunks-strings) (cdr (peg-thunks-stack)))))
+
+(defun peg-pop-current-list ()
+  "Remove and return the first element of the first list on the data stack."
+  (let ((top-list (peg-pop-list-from-stack)))
+    (peg-push-list-on-stack (cdr top-list))
+    (car top-list)))
+
+(defun peg-peek-current-list ()
+  "Return the first element of the first list on the data stack."
+  (car (peg-thunks-stack)))
+
+(defun peg-push-current-list (data)
+  (peg-thunks-assemble (peg-thunks-strings) (cons data (peg-thunks-stack))))
+
+(defun peg-push-str-on-stack (str)
+  (peg-thunks-assemble (cons str (peg-thunks-strings)) (peg-thunks-stack)))
+
+(peg-define-method-table normalize-generator)
+(defmacro peg-copy-method-item (method type-from type-to)
+  `(puthash ,method
+            (gethash ,method ,(peg-method-table-name type-from))
+            ,(peg-method-table-name type-to)))
+
+;;; normalize pass-through to translate
+(defconst peg-generator-leaf-types '(null fail any call action action-consume char
+                                          range str set keyword pred))
+(dolist (type peg-generator-leaf-types)
+  (puthash type `(lambda (&rest args) (cons ',type args))
+           peg-normalize-generator-methods))
+
+;;; normalize same as parse
+(dolist (method '(or and * + opt if not set \`))
+  (peg-copy-method-item method normalize normalize-generator))
+
+(peg-add-method normalize-generator list (&rest args)
+  (peg-normalize
+   `(and (action-consume
+          (let ((new-list (peg-pop-current-list)))
+            (when (listp new-list)
+              (peg-push-list-on-stack new-list))))
+         ,@args
+         (action
+          (null (peg-pop-current-list))))))
+
+(peg-add-method normalize-generator cons (a &rest b)
+  (peg-normalize
+   `(and (action-consume
+          (let ((c (peg-pop-current-list)))
+            (when (consp c)
+              (peg-push-list-on-stack (list (cdr c)))
+              (peg-push-list-on-stack (list (car c))))))
+         (list ,a)
+         (list ,@b))))
+
+(peg-add-method normalize-generator substring (&rest args)
+  (peg-normalize
+   `(and (action-consume
+          (let ((s (peg-pop-current-list)))
+            (when (stringp s)
+              (setq peg-generator-in-substring t)
+              (peg-push-str-on-stack s)
+              (save-excursion
+                (insert s)
+                t))))
+         (or (and
+              ,@args
+              ;; now ensure that all got consumed
+              (action
+               (setq peg-generator-in-substring nil)
+               (= (point) (point-max))))
+             ;; must have failed somewhere
+             (action
+              (setq peg-generator-in-substring nil)
+              (delete-region (point-min) (point-max))
+              nil)))))
+
+(peg-add-method normalize-generator quote (form)
+  (cond
+   ((stringp form)
+    (peg-normalize `(and ',(intern form) ,form)))
+   ((symbolp form)
+    `(action (equal ',form (peg-pop-current-list))))
+   (t
+    (error "Invalid form passed to quote %S" form))))
+
+(peg-add-method normalize-generator stack-action (form)
+  (unless (member '-- form)
+    (error "Malformed stack action: %S" form))
+  (let ((args (cdr (member '-- (reverse form))))
+	(values (cdr (member '-- form))))
+    (let ((form `(let ,(mapcar (lambda (var) `(,var (pop peg-pop-current-list))) args)
+		   ,@(mapcar (lambda (val) `(push ,val peg-push-current-list)) values))))
+      `(action ,form))))
+
+;; no region or replace types.
+
+;; XXX we need something pre-substring for output.
+;; XXX also need custom predicates?
+;; XXX try: implement predicates & transformations with \,():
+;; XXX return string for success, nil on error.
+
+
 (peg-define-method-table translate)
+(peg-define-method-table translate-generator)
 
 ;; This is the main translation function.
 (defun peg-translate-exp (exp)
   "Return the ELisp code to match the PE EXP."
-  (let ((translator (or (gethash (car exp) peg-translate-methods)
+  (let ((translator (or (gethash (car exp) (if peg-creating-generator
+                                               peg-translate-generator-methods
+                                             peg-translate-methods))
 			(error "No translator for: %S" (car exp)))))
     `(or ,(apply translator (cdr exp))
 	 (progn
@@ -543,10 +704,50 @@ Note: a PE can't \"call\" rules by name."
       (error "Reference to unknown rule: %S" name))
   `(funcall ,name))
 
-(peg-add-method translate action (form)
+(peg-add-method translate action (&rest form)
   `(progn
-     (push (cons (point) (lambda () ,form)) peg-thunks)
+     (push (cons (point) (lambda () ,@form)) peg-thunks)
      t))
+
+;;; translate methods that are the same in translate-generator
+(dolist (method '(and or null fail = * if not any char set range call))
+  (peg-copy-method-item method translate translate-generator))
+
+(peg-add-method translate-generator str (exp)
+  `(if peg-generator-in-substring
+       (when (looking-at ',(regexp-quote exp))
+         (goto-char (match-end 0))
+         t)
+     (peg-push-str-on-stack ,exp)))
+
+(peg-add-method translate-generator keyword (exp)
+  `(let ((current-list (peg-pop-list-from-stack)))
+     (when (and (keywordp (car current-list))
+                (plist-member current-list ,exp))
+       (let (new-list)
+         (while (not (equal ,exp (car current-list)))
+           (let ((key (pop current-list))
+                 (val (pop current-list)))
+             (push val new-list)
+             (push key new-list)))
+         (assert current-list)                   ; better not be empty
+         (assert (equal ,exp (car current-list))) ; and have the prop we searched for
+         (let ((prop-value (nth 1 current-list))
+               (list-tail (cddr current-list)))
+           (setf new-list (append (list prop-value) new-list list-tail))
+           (peg-push-list-on-stack new-list))))))
+
+(peg-add-method translate-generator pred (form)
+  `(let ((pred (peg-peek-current-list)))
+     ,@form))
+
+(peg-add-method translate-generator action (&rest form)
+  `(progn
+     ,@form))
+
+(peg-add-method translate-generator action-consume (&rest form)
+  (peg-translate-exp `(action ,@form)))
+
 
 (defvar peg-stack)
 (defun peg-postprocess (thunks)
@@ -574,7 +775,9 @@ Note: a PE can't \"call\" rules by name."
 
 (defun peg-find-star-nodes (exp)
   (let ((type (car exp)))
-    (cond ((memq type peg-leaf-types) '())
+    (cond ((memq type (if peg-creating-generator
+                          peg-generator-leaf-types
+                        peg-leaf-types)) '())
 	  (t (let ((kids (apply #'append
 				(mapcar #'peg-find-star-nodes (cdr exp)))))
 	       (if (eq type '*)
@@ -637,7 +840,11 @@ input.  PATH is the list of rules that we have visited so far."
 (peg-add-method detect-cycles eos   (path)       t)
 (peg-add-method detect-cycles =     (path s)     nil)
 (peg-add-method detect-cycles syntax-class (p n) nil)
-(peg-add-method detect-cycles action (path form) t)
+(peg-add-method detect-cycles action (path &rest form) t)
+
+(peg-add-method detect-cycles action-consume (path &rest from) nil)
+(peg-add-method detect-cycles keyword (path k)   nil)
+(peg-add-method detect-cycles pred  (path form)  nil)
 
 (peg-define-method-table merge-error)
 
@@ -683,7 +890,7 @@ input.  PATH is the list of rules that we have visited so far."
 (peg-add-method merge-error any (merged)
   (add-to-list 'merged '(any)))
 
-(peg-add-method merge-error action (merged _) merged)
+(peg-add-method merge-error action (merged &rest _) merged)
 (peg-add-method merge-error null (merged) merged)
 
 ;;; Tests:
