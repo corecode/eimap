@@ -1,5 +1,21 @@
 (require 'peg)
 
+(defun eimap-gen-quote-string (str)
+  (replace-regexp-in-string "[\\\"]" "\\\\\\&" str))
+
+(peg-add-method normalize-generator literalstr ()
+  `(literalstr))
+
+(peg-add-method translate-generator literalstr ()
+  `(let ((str (peg-pop-current-list)))
+     (peg-push-str-on-stack (format "{%d}\x0d\x0a" (string-bytes str)))
+     (peg-push-str-on-stack (make-symbol "--literal-marker--"))
+     (peg-push-str-on-stack str)))
+
+(peg-add-method detect-cycles literalstr (path) nil)
+(peg-add-method merge-error literalstr (merged)
+  "IMAP literal")
+
 (defmacro eimap-defgen (funname &rest rules)
   (declare (indent 1))
   `(defun ,funname (data)
@@ -180,7 +196,7 @@
    (nstring (or string
                 =nil))
    (quoted "\"" `(str -- (eimap-gen-quote-string str)) (substring (* QUOTED-CHAR)) "\"")
-   (literal (fail))
+   (literal (literalstr))
 
    (number `(n -- (number-to-string n)) (substring (+ [0-9])))
    (nz-number `(n -- (number-to-string n)) (substring [1-9] (* [0-9])))
@@ -205,20 +221,27 @@
    (list-char (or ATOM-CHAR
                   list-wildcards
                   resp-specials))
-   (atom-specials (or ["(){ " ?\x7f]
-                      (range 0 31)
+   (atom-specials (or ["(){ " #x7f]
+                      (range #x00 #x1f)
                       list-wildcards
                       quoted-specials
                       resp-specials))
-   (ATOM-CHAR (not atom-specials) (any))
+   (ATOM-CHAR (not atom-specials) CHAR)
    (ASTRING-CHAR (or ATOM-CHAR
                      resp-specials))
-   (TEXT-CHAR (not ["\x0d\x0a"]) (any))
+   (TEXT-CHAR (not ["\x0d\x0a"]) CHAR)
+   (CHAR (range #x01 #x7f))
    (quoted-specials ["\\\""])
    (QUOTED-CHAR (or (and (not quoted-specials) TEXT-CHAR)
                     (and "\\" quoted-specials)))))
 
+(eval '(progn "
+("
+
 (eimap-gen '(:tag "c0" :method AUTHENTICATE :auth-type "PLAIN" :auth-token "FOo="))
-;(eimap-gen (list :tag "c0"))p
+(eimap-gen '(:tag "c1" :method CREATE :mailbox "föo"))
+;(eimap-gen (list :tag "c0"))
 ;;; (:method SEARCH :keys (:from "foo" :not (:from "foobar")))
 ;;; (:method SEARCH :keys ((FROM . "foo") (NOT . (FROM . "foobar"))))
+
+))
