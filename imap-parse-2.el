@@ -241,20 +241,20 @@
     (body "(" (list (or body-type-1part
                         body-type-mpart)) ")")
     (body-type-1part (or body-type-text
-                                        ;body-type-msg
-                                        ;body-type-basic
-                         )
-                                        ;  (opt SP body-ext-1part)
-                     )
-    (body-ext-1part "XXX")
-
-    (body-type-mpart "XXX")
+                         body-type-msg
+                         body-type-basic)
+                     (opt SP body-ext-1part))
+    (body-type-mpart :mpart (list (+ body)) SP :subtype string
+                     (opt SP body-ext-mpart))
 
     (body-type-text (if "\"TEXT\"" SP)
-                    mime-type SP body-fields SP :lines number)
+                    mime-type SP body-fields SP body-fld-lines)
 
-    (body-type-msg "XXX")
-    (body-type-basic "XXX")
+    (body-type-msg (if "\"MESSAGE\"" SP "\"RFC822\"" SP)
+                   mime-type SP body-fields SP
+                   :message (list :envelope envelope SP :body body SP)
+                   body-fld-lines)
+    (body-type-basic mime-type SP body-fields)
 
     (mime-type :mime-type quoted SP quoted
                `(a b -- `(,a . ,b)))
@@ -270,6 +270,30 @@
     (body-fld-desc :desc nstring)
     (body-fld-enc :enc string)
     (body-fld-octets :octets number)
+    (body-fld-lines :lines number)
+
+    (body-ext-1part body-fld-md5
+                    (opt SP body-fld-dsp
+                         (opt SP body-fld-lang
+                              (opt SP body-fld-loc
+                                   (* SP body-extension)))))
+    (body-ext-mpart body-fld-param
+                    (opt SP body-fld-dsp
+                         (opt SP body-fld-lang
+                              (opt SP body-fld-loc
+                                   (* SP body-extension)))))
+
+    (body-fld-md5 :md5 string)
+    (body-fld-dsp :disposition (or (cons "(" string SP body-fld-param ")")
+                                   =nil))
+    (body-fld-lang :lang (or =nil
+                             (list (or string
+                                       (and "(" string (* SP string) ")")))))
+    (body-fld-loc :loc nstring)
+    (body-extension :extension
+                    (or nstring
+                        number
+                        (and "(" body-extension (* SP body-extension) ")")))
 
 
 

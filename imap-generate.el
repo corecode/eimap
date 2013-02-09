@@ -35,91 +35,42 @@
                        uid
                        search))
 
-   (append '"APPEND" SP :mailbox mailbox (opt SP flag-list) (opt SP date-time) SP literal)
+   (append '"APPEND" SP :mailbox mailbox (opt SP :flags flag-list)
+           (opt SP :date date-time) SP :data literal)
+   (flag-list "(" (list (opt flag (* SP flag))) ")")
+
    (create '"CREATE" SP :mailbox mailbox)
    (delete '"DELETE" SP :mailbox mailbox)
    (examine '"EXAMINE" SP :mailbox mailbox)
-   (list '"LIST" SP :mailbox mailbox SP :list-mailbox list-mailbox)
-   (lsub '"LSUB" SP :mailbox mailbox SP :list-mailbox list-mailbox)
+   (list '"LIST" SP :mailbox mailbox SP :pattern list-mailbox)
+   (lsub '"LSUB" SP :mailbox mailbox SP :pattern list-mailbox)
    (rename '"RENAME" SP :from-mailbox mailbox SP :to-mailbox mailbox)
    (select '"SELECT" SP :mailbox mailbox)
+
    (status '"STATUS" SP :mailbox mailbox SP
-           :status-att (list "(" status-att (* SP status-att) ")"))
-   (subscribe '"SUBSCRIBE" SP :mailbox mailbox)
-   (unsubscribe '"UNSUBSCRIBE" SP :mailbox mailbox)
-
-   (authenticate '"AUTHENTICATE" SP :auth-type atom
-                 (opt SP :auth-token
-                      (or (substring "=") ; allow single pad
-                          base64)))
-
-   (copy '"COPY" SP :sequence-set sequence-set SP :mailbox mailbox)
-   (fetch '"FETCH" SP :sequence-set sequence-set SP
-          :fetch-att (or '"ALL"
-                         '"FULL"
-                         '"FAST"
-                         fetch-att
-                         (list "(" fetch-att (* SP fetch-att) ")")))
-   (store '"STORE" SP :sequence-set sequence-set SP :flags store-att-flags)
-   (uid :uid 't "UID" SP
-        (or copy
-            fetch
-            search
-            store))
-
-   (search '"SEARCH" (opt SP "CHARSET" SP :charset astring)
-           :keys (list (+ SP search-key)))
-   (search-key (or
-                (and :all 't "ALL")
-                (and :answered search-key-bool-prefix "ANSWERED")
-                (and :bcc "BCC" SP astring)
-                (and :before "BEFORE" SP date)
-                (and :body "BODY" SP astring)
-                (and :cc "CC" SP astring)
-                (and :deleted search-key-bool-prefix "DELETED")
-                (and :flagged search-key-bool-prefix "FLAGGED")
-                (and :from "FROM" SP astring)
-                (and :keyword (cons search-key-bool-prefix "KEYWORD" atom))
-                (and :new (or (and 't "NEW")
-                              (and 'nil "OLD")))
-                (and :on "ON" SP date)
-                (and :recent 't "RECENT")
-                (and :seen search-key-bool-prefix "SEEN")
-                (and :since "SINCE" SP date)
-                (and :subject "SUBJECT" SP astring)
-                (and :text "TEXT" SP astring)
-                (and :to "TO" SP astring)
-                (and :draft search-key-bool-prefix "DRAFT")
-                (and :header "HEADER" SP (cons astring SP astring))
-                (and :larger "LARGER" SP number)
-                (and :not "NOT" SP (list search-key))
-                (and :or "OR" SP (cons search-key search-key))
-                (and :sentbefore "SENTBEFORE" SP date)
-                (and :senton "SENTON" SP date)
-                (and :sentsince "SENTSINCE" SP date)
-                (and :smaller "SMALLER" SP number)
-                (and :uid SP sequence-set)
-                (and :message-id sequence-set)
-                (and "(" (list search-key) ")")
-                ))
-   (search-key-bool-prefix (or 't
-                               (and 'nil "UN")))
-
-   (flag-list "(" (list (opt flag (* SP flag))) ")")
-   (mailbox astring)
+           :attr (list "(" status-att (* SP status-att) ")"))
    (status-att (or '"MESSAGES"
                    '"RECENT"
                    '"UIDNEXT"
                    '"UIDVALIDITY"
                    '"UNSEEN"))
-   (sequence-set (list (or seq-number
-                           seq-range)
-                       (* "," (or seq-number
-                                  seq-range))))
-   (seq-range (cons seq-number ":" seq-number))
-   (seq-number (or nz-number
-                   '"*"))
 
+   (subscribe '"SUBSCRIBE" SP :mailbox mailbox)
+   (unsubscribe '"UNSUBSCRIBE" SP :mailbox mailbox)
+
+   (authenticate '"AUTHENTICATE" SP :auth-type atom
+                 ;; RFC 4959:
+                 (opt SP :auth-token
+                      (or (substring "=") ; allow single pad
+                          base64)))
+
+   (copy '"COPY" SP :ids sequence-set SP :mailbox mailbox)
+   (fetch '"FETCH" SP :ids sequence-set SP
+          :attr (or '"ALL"
+                    '"FULL"
+                    '"FAST"
+                    fetch-att
+                    (list "(" fetch-att (* SP fetch-att) ")")))
    (fetch-att (or '"ENVELOPE"
                   '"FLAGS"
                   '"INTERNALDATE"
@@ -130,8 +81,10 @@
                   '"BODY"
                   '"BODYSTRUCTURE"
                   '"UID"
-                  (cons '"BODY" section)
-                  (cons '"BODY.PEEK" section)))
+                  (cons (or '"BODY"
+                            '"BODY.PEEK")
+                        section
+                        (opt :partial (cons "<" number "." nz-number ">")))))
 
    (section "[" (opt :section (list section-spec)) "]")
    (section-spec (or section-msgtext
@@ -147,6 +100,7 @@
                      :text '"MIME"))
    (header-list "(" (list astring (* SP astring)) ")")
 
+   (store '"STORE" SP :ids sequence-set SP :flags store-att-flags)
    (store-att-flags (opt (or '"+"
                              '"-")) "FLAGS" SP "(" (opt flag (* SP flag)) ")")
    (flag (or ;; '"\\Answered"
@@ -159,6 +113,58 @@
           flag-extension))
    (flag-extension (substring "\\" atom))
 
+   (uid :uid 't "UID" SP
+        (or copy
+            fetch
+            search
+            store))
+
+   (search '"SEARCH" (opt SP "CHARSET" SP :charset astring)
+           :keys (list (+ SP search-key)))
+   (search-key (or
+                '"ALL"
+                '"ANSWERED"
+                (cons '"BCC" SP astring)
+                (cons '"BEFORE" SP date)
+                (cons '"BODY" SP astring)
+                (cons '"CC" SP astring)
+                '"DELETED"
+                '"FLAGGED"
+                (cons '"FROM" SP astring)
+                (cons '"KEYWORD" atom)
+                '"NEW"
+                '"OLD"
+                (cons '"ON" SP date)
+                '"RECENT"
+                '"SEEN"
+                (cons '"SINCE" SP date)
+                (cons '"SUBJECT" SP astring)
+                (cons '"TEXT" SP astring)
+                (cons '"TO" SP astring)
+                '"DRAFT"
+                (cons '"HEADER" SP (cons astring SP astring))
+                (cons '"LARGER" SP number)
+                (cons '"NOT" SP search-key)
+                (cons '"OR" SP (cons search-key SP search-key))
+                (cons '"SENTBEFORE" SP date)
+                (cons '"SENTON" SP date)
+                (cons '"SENTSINCE" SP date)
+                (cons '"SMALLER" SP number)
+                (cons '"UID" SP sequence-set)
+                (cons 'MESSAGE-ID sequence-set)
+                (and "(" (list search-key) ")")))
+
+   (sequence-set (or seq-number
+                     seq-range
+                     (list (or seq-number
+                               seq-range)
+                           (* "," (or seq-number
+                                      seq-range)))))
+   (seq-range (list :from seq-number ":" :to seq-number))
+   (seq-number (or nz-number
+                   '"*"))
+
+   (mailbox astring)
 
 ;;; data generation
 
