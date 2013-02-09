@@ -1,5 +1,4 @@
 (require 'peg)
-(require 'dash)
 
 (defun eimap-parse-unquote-string (str)
   (replace-regexp-in-string "\\\\\\(.\\)" "\\1" str))
