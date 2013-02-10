@@ -83,7 +83,7 @@
    (subscribe '"SUBSCRIBE" SP :mailbox mailbox)
    (unsubscribe '"UNSUBSCRIBE" SP :mailbox mailbox)
 
-   (authenticate '"AUTHENTICATE" SP :auth-type atom
+   (authenticate '"AUTHENTICATE" SP :auth-mech atom
                  ;; RFC 4959:
                  (opt SP :auth-token
                       (or (substring "=") ; allow single pad
@@ -247,7 +247,7 @@
 (eval '(progn "
 ("
 
-(eimap-gen '(:tag "c0" :method AUTHENTICATE :auth-type "PLAIN" :auth-token "FOo="))
+(eimap-gen '(:tag "c0" :method AUTHENTICATE :auth-mech "PLAIN" :auth-token "FOo="))
 (eimap-gen '(:tag "c1" :method CREATE :mailbox "föo"))
 ;(eimap-gen (list :tag "c0"))
 ;;; (:method SEARCH :keys (:from "foo" :not (:from "foobar")))
