@@ -1,5 +1,6 @@
 (require 'peg)
 (require 'dash)
+(require 'cl)
 
 (defun eimap-gen-quote-string (str)
   (replace-regexp-in-string "[\\\"]" "\\\\\\&" str))
