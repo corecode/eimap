@@ -1,4 +1,5 @@
 (require 'peg)
+(require 'dash)
 
 (defun eimap-gen-quote-string (str)
   (replace-regexp-in-string "[\\\"]" "\\\\\\&" str))
@@ -19,13 +20,21 @@
 (defmacro eimap-defgen (funname &rest rules)
   (declare (indent 1))
   `(defun ,funname (data)
-     ;(peg-generate data ,@rules)
-     ,(let ((peg-creating-generator t)
-            (peg-generator-data 'data))
-        (peg-translate-rules rules))))
+     (let ((result
+            ,(let* ((peg-creating-generator t)
+                    (peg-generator-data 'data))
+               (peg-translate-rules rules)))
+           result-strs)
+       (while (destructuring-bind (front back) (-split-with #'stringp result)
+                (push (apply #'concat front) result-strs)
+                (when back
+                  (assert (symbolp (car back)))
+                  (pop back))
+                (setf result back)))
+       (nreverse result-strs))))
 
 (eval-when-compile
-  (eimap-defgen eimap-gen
+  (eimap-defgen eimap-generate
    (command tag SP :method (or command-any
                                command-auth
                                command-nonauth
