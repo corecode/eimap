@@ -883,6 +883,9 @@ input.  PATH is the list of rules that we have visited so far."
 (peg-add-method merge-error range (merged from to)
   (add-to-list 'merged (format "[%c-%c]" from to)))
 
+(peg-add-method merge-error keyword (merged kw)
+  (add-to-list 'merged kw))
+
 (peg-add-method merge-error * (merged exp)
   (peg-merge-error exp merged))
 
@@ -893,6 +896,7 @@ input.  PATH is the list of rules that we have visited so far."
   (add-to-list 'merged '(any)))
 
 (peg-add-method merge-error action (merged &rest _) merged)
+(peg-add-method merge-error action-consume (merged &rest _) merged)
 (peg-add-method merge-error null (merged) merged)
 
 ;;; Tests:
