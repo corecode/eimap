@@ -70,8 +70,9 @@ active."
     (set (make-local-variable 'eimap-port) port)
     (set (make-local-variable 'eimap-capabilities) nil)
     (set (make-local-variable 'eimap-auth-methods) nil)
-    (set (make-local-variable 'eimap-continue-tags) nil)
+    (set (make-local-variable 'eimap-continue-tag) nil)
     (set (make-local-variable 'eimap-outstanding-tags) nil)
+    (set (make-local-variable 'eimap-req-queue) nil)
     (set (make-local-variable 'eimap-tag) 0)
     (let ((coding-system-for-read 'binary)
           (coding-system-for-write 'binary)
@@ -95,15 +96,52 @@ active."
   (setq eimap-tag (1+ eimap-tag))
   (concat "e" (number-to-string eimap-tag)))
 
-(defun* eimap-request (string &rest data &key continue done cbdata)
+(defun* eimap-request (req &rest data &key continue done cbdata barrier)
   "Tag request and setup callback hooks"
   (let* ((tag (eimap-new-tag))
-         (tag-record (cons tag data)))
-    (add-to-list 'eimap-outstanding-tags tag-record)
-    (when continue
-      (push tag eimap-continue-tags))
-    (let ((req (concat tag " " string "\x0d\x0a")))
-      (eimap-network-send req))))
+         (req (plist-put req :tag tag))
+         ;; eimap-generate returns a list of strings, each for one
+         ;; continuation step
+         (req-strs (eimap-generate req))
+         (req-str (car req-strs))
+         (cont-strs (cdr req-strs))
+         tag-data)
+    ;; prepare data for completion/continuation
+    ;; if we have continuation data, set a callback for it
+    (when (and cont-strs (not continue))
+      (setq continue 'internal)
+      (setq data (plist-put data :continue continue)))
+    (setq data (plist-put data :req-str req-str))
+    (setq data (plist-put data :cont-strs cont-strs))
+    (setq tag-data (cons tag data))
+    ;; add to request queue and kick it
+    (add-to-list 'eimap-req-queue data t)
+    (eimap-process-req-queue)))
+
+(defun eimap-process-req-queue ()
+  "Issue queued requests when the time is right."
+  ;; do we have queued requests and all in-flight requests have drained?
+  (catch 'out
+    (while eimap-req-queue
+      (let* ((data (pop eimap-req-queue))
+             (tag (plist-get data :tag))
+             (barrier (plist-get data :barrier))
+             (continue (plist-get data :continue))
+             (req-str (plist-get data :req-str)))
+        ;; stop if:
+        ;; - this is a barrier and there are already requests inflight
+        ;; - we wait on a continue
+        (when (or (and barrier eimap-outstanding-tags)
+                  eimap-continue-tag)
+          ;; we popped too soon
+          (push data eimap-req-queue)
+          (throw 'out nil))
+        (when barrier
+          (funcall barrier (plist-get data :cbdata)))
+        (when continue
+          (setq eimap-continue-tag tag))
+        (push (cons tag data) eimap-outstanding-tags)
+        (eimap-network-send req-str)))))
 
 (defun eimap-process-reply ()
   "Parse network reply and run protocol state machine."
@@ -113,16 +151,19 @@ active."
          (method (plist-get reply :method)))
     (case type
       ('continue
-       (let* ((tag (car eimap-continue-tags))
+       (let* ((tag eimap-continue-tag)
               (tag-record (assoc-string tag eimap-outstanding-tags))
               (tag-data (cdr tag-record))
-              (cont-handler (plist-get tag-data :continue))
+              (continue (plist-get tag-data :continue))
               (cbdata (plist-get tag-data :cbdata)))
-         (when (null cont-handler)
+         (when (null continue)
            (error "Continuation without handler for request data %S" tag-data))
-         ;; we pass on the returned data to the next handler
-         (let ((new-cbdata (funcall cont-handler params new-cbdata)))
-           (setcdr tag-record (plist-put tag-data :cbdata new-cbdata)))))
+         (case continue
+           ('internal
+            (eimap-process-common-continue tag-data))
+           (t
+            (setq data (funcall continue params cbdata))
+            (setcdr tag-record (plist-put tag-data :cbdata cbdata))))))
       ('data
        (let ((handler (gethash method eimap-method-dispatch-table))
              (handler-params (plist-get params :params)))
@@ -136,7 +177,20 @@ active."
          (when done-handler
            (funcall done-handler params cbdata))
          (setq eimap-outstanding-tags (delq tag-record eimap-outstanding-tags))
-         (setq eimap-continue-tags (pop eimap-continue-tags)))))))
+         (eimap-process-req-queue))))))
+
+(defun eimap-process-common-continue (data)
+  (let* ((cont-strs (plist-get data :cont-strs))
+         (next-str (car cont-strs))
+         (next-cont-strs (cdr cont-strs)))
+    (assert next-str)
+    ;; if there are more strings, update our data (ugly :/)
+    (if next-cont-strs
+        (setcdr (assoc (plist-get data :tag) eimap-outstanding-tags)
+                (plist-put data :cont-strs next-cont-strs))
+      ;; else no more tag: flush the queue
+      (setq eimap-continue-tag nil)
+      (eimap-process-req-queue))))
 
 (eimap-define-method cond-state (data params)
   "Handle untagged OK/NO/BAD/BYE/PREAUTH messages"
@@ -167,28 +221,45 @@ active."
         (error "No SASL mechanism found do handle server supported methods: %S" eimap-auth-methods))
       (set eimap-state 'authenticating)
       (let* ((client (sasl-make-client mech eimap-user eimap-port eimap-host))
-             (steps nil))
-        (eimap-request (format "AUTHENTICATE %s" (sasl-mechanism-name mech))
+             (steps nil)
+             (cbdata (list :client client
+                           :steps steps))
+             (req (list :method 'AUTHENTICATE
+                        :auth-mech (sasl-mechanism-name mech))))
+        (when (member "SASL-IR" eimap-capabilities)
+          (let ((reply-data (eimap-auth-next-step "" cbdata)))
+            (setq req (plist-put req :auth-token (car reply-data)))
+            (setq cbdata (cdr reply-data))))
+        (eimap-request req
                        :continue 'eimap-auth-steps
                        :done 'eimap-auth-done
-                       :cbdata (list :client client :steps steps))))))
+                       :cbdata cbdata)))))
 
 (defun eimap-auth-steps (params data)
-  "Walk through SASL steps.  Data we return will be passed as
-argument in the next step."
+  "Continuation callback for AUTHENTICATE.  Returns NEW-DATA that gets
+passed in again in the next step."
   (let* ((text (plist-get params :text))
+         (reply-data (eimap-auth-next-step text data)))
+    (eimap-network-send (concat (car reply-data) "\x0d\x0a"))
+    (cdr reply-data)))
+
+(defun eimap-auth-next-step (text data)
+  "Take next step through SASL.  TEXT is the answer from the server.
+Returns (REPLY . NEW-DATA)."
+  (let* (
          (decoded (base64-decode-string text))
          (client (plist-get data :client))
          (steps (plist-get data :steps))
          ;; eimap-read-pass might set eimap-authtok
          (sasl-read-passphrase 'eimap-read-pass)
-         (eimap-authtok nil))
+         (eimap-authtok nil)
+         auth-reply)
     (setq steps (sasl-next-step client (and (> (length decoded) 0)
                                             decoded)))
     (setq data (plist-put data :steps steps))
-    (eimap-network-send (concat (base64-encode-string (sasl-step-data steps) t) "\x0d\x0a"))
+    (setq auth-reply (base64-encode-string (sasl-step-data steps) t))
     (setq data (plist-put data :authtok eimap-authtok))
-    data))
+    (cons auth-reply data)))
 
 (defun eimap-read-pass (prompt)
   "Callback from SASL to read the passphrase.  Instead of
@@ -215,6 +286,7 @@ prompt."
 the password.
 
 XXX maybe detect if password was cached and discard on error?"
+  (setq eimap-continue-tag nil)
   (case (plist-get params :state)
     (OK
      (let* ((authtok (plist-get data :authtok))
