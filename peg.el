@@ -210,13 +210,14 @@ Note: a PE can't \"call\" rules by name."
 		 rules)
        ,(if peg-creating-generator
             `(with-temp-buffer
-               (set (make-local-variable 'peg-generator-in-substring) nil)
-               (peg-push-list-on-stack (list ,peg-generator-data))
-               (cond ((progn
-                        ,(peg-translate-exp (peg-normalize `(and (list ,(car (car rules)))))))
-                      (nreverse (car peg-thunks)))
-                     (t
-                      (peg-report-error))))
+               (let ((peg-generator-in-substring nil)
+                     (peg-creating-generator t))
+                 (peg-push-list-on-stack (list ,peg-generator-data))
+                 (cond ((progn
+                          ,(peg-translate-exp (peg-normalize `(and (list ,(car (car rules)))))))
+                        (nreverse (car peg-thunks)))
+                       (t
+                        (peg-report-error)))))
           `(cond ((funcall ,(car (car rules)))
                   (save-excursion
                     (peg-postprocess peg-thunks)))
@@ -478,7 +479,7 @@ Note: a PE can't \"call\" rules by name."
 
 ;;; normalize pass-through to translate
 (defconst peg-generator-leaf-types '(null fail any call action action-consume char
-                                          range str set keyword pred))
+                                          range str set keyword))
 (dolist (type peg-generator-leaf-types)
   (puthash type `(lambda (&rest args) (cons ',type args))
            peg-normalize-generator-methods))
@@ -492,10 +493,11 @@ Note: a PE can't \"call\" rules by name."
    `(and (action-consume
           (let ((new-list (peg-pop-current-list)))
             (when (listp new-list)
-              (peg-push-list-on-stack new-list))))
+              (peg-push-list-on-stack new-list)
+              t)))
          ,@args
          (action
-          (null (peg-pop-current-list))))))
+          (null (peg-pop-list-from-stack))))))
 
 (peg-add-method normalize-generator cons (a &rest b)
   (peg-normalize
@@ -503,7 +505,8 @@ Note: a PE can't \"call\" rules by name."
           (let ((c (peg-pop-current-list)))
             (when (consp c)
               (peg-push-list-on-stack (list (cdr c)))
-              (peg-push-list-on-stack (list (car c))))))
+              (peg-push-list-on-stack (list (car c)))
+              t)))
          (list ,a)
          (list ,@b))))
 
@@ -515,18 +518,20 @@ Note: a PE can't \"call\" rules by name."
               (setq peg-generator-in-substring t)
               (peg-push-str-on-stack s)
               (save-excursion
-                (insert s)
-                t))))
+                (insert s))
+              t)))
          (or (and
               ,@args
               ;; now ensure that all got consumed
               (action
                (setq peg-generator-in-substring nil)
-               (= (point) (point-max))))
+               (prog1
+                   (= (point) (point-max))
+                 (erase-buffer))))
              ;; must have failed somewhere
              (action
               (setq peg-generator-in-substring nil)
-              (delete-region (point-min) (point-max))
+              (erase-buffer)
               nil)))))
 
 (peg-add-method normalize-generator quote (form)
@@ -571,10 +576,16 @@ Note: a PE can't \"call\" rules by name."
 	   nil))))
 
 (defun peg-record-failure (exp)
-  (cond ((= (point) (car peg-errors))
-	 (setcdr peg-errors (cons exp (cdr peg-errors))))
-	((> (point) (car peg-errors))
-	 (setq peg-errors (list (point) exp)))))
+  ;; some numbers magic: when parsing, point grows, but when
+  ;; generating, peg-thunks-stack shrinks; therefore use a
+  ;; negative length to have the same greedy behavior.
+  (let ((pos (if peg-creating-generator
+                 (- (length (-flatten (peg-thunks-stack))))
+               (point))))
+    (cond ((= pos (car peg-errors))
+           (setcdr peg-errors (cons exp (cdr peg-errors))))
+          ((> pos (car peg-errors))
+           (setq peg-errors (list pos exp))))))
 
 (peg-add-method translate and (e1 e2)
   `(and ,(peg-translate-exp e1)
@@ -737,11 +748,8 @@ Note: a PE can't \"call\" rules by name."
          (let ((prop-value (nth 1 current-list))
                (list-tail (cddr current-list)))
            (setf new-list (append (list prop-value) new-list list-tail))
-           (peg-push-list-on-stack new-list))))))
-
-(peg-add-method translate-generator pred (form)
-  `(let ((pred (peg-peek-current-list)))
-     ,@form))
+           (peg-push-list-on-stack new-list)))
+       t)))
 
 (peg-add-method translate-generator action (&rest form)
   `(progn
@@ -846,7 +854,6 @@ input.  PATH is the list of rules that we have visited so far."
 
 (peg-add-method detect-cycles action-consume (path &rest from) nil)
 (peg-add-method detect-cycles keyword (path k)   nil)
-(peg-add-method detect-cycles pred  (path form)  nil)
 
 (peg-define-method-table merge-error)
 
@@ -887,6 +894,9 @@ input.  PATH is the list of rules that we have visited so far."
   (add-to-list 'merged kw))
 
 (peg-add-method merge-error * (merged exp)
+  (peg-merge-error exp merged))
+
+(peg-add-method merge-error if (merged exp)
   (peg-merge-error exp merged))
 
 (peg-add-method merge-error not (merged exp)
