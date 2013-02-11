@@ -1,4 +1,5 @@
 (require 'peg)
+(require 'dash)
 
 (defun eimap-parse-unquote-string (str)
   (replace-regexp-in-string "\\\\\\(.\\)" "\\1" str))
@@ -138,6 +139,10 @@
                            :params mailbox-list)
                       (and '"SEARCH"
                            :params (list :result (list (* SP number))))
+                      (and '"ESEARCH"
+                           :params (list (opt search-correlator)
+                                         (opt :uid 't SP "UID")
+                                         (* SP search-return-data)))
                       (and '"STATUS" SP
                            :params (list mailbox
                                          SP "(" status-att-list ")"))
@@ -163,6 +168,22 @@
                     ;; '"\\Marked"
                     ;; '"\\Unmarked"
                     flag-extension))
+
+    (search-correlator :tag SP "(" "TAG" SP string ")")
+    (search-return-data (or (and :min "MIN" SP number)
+                            (and :max "MAX" SP number)
+                            (and :all "ALL" SP sequence-set)
+                            (and :count "COUNT" SP number)))
+    (sequence-set (list (or seq-range
+                            (list number))
+                        (* "," (or seq-range
+                                   (list number))))
+                  `(l -- (-flatten l)))
+    (seq-range  number ":" number
+                ;; directly expand
+                `(from to -- (if (< from to)
+                                 (number-sequence from to)
+                               (number-sequence to from))))
 
     (status-att-list status-att-pair (* SP status-att-pair))
     (status-att-pair (or (and "MESSAGES" :messages)

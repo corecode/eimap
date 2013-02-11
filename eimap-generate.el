@@ -149,7 +149,16 @@
             store))
 
    (search '"SEARCH" (opt SP "CHARSET" SP :charset astring)
+           (opt :return search-return-opts)
            :keys (list (+ SP search-key)))
+   (search-return-opts SP "RETURN" SP
+                       "(" (or search-return-opt
+                               (list search-return-opt
+                                     (* SP search-return-opt))) ")")
+   (search-return-opt (or '"MIN"
+                          '"MAX"
+                          '"ALL"
+                          '"COUNT"))
    (search-key (or
                 '"ALL"
                 '"ANSWERED"
