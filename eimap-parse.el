@@ -151,7 +151,7 @@
                    (opt :flags mbx-list-flags)
                    ")" SP
                    :mboxsep (or (and "\"" (substring QUOTED-CHAR)
-                                     `(str -- (eimap-parse-unquote-string))
+                                     `(str -- (eimap-parse-unquote-string str))
                                      "\"")
                                 =nil)
                    SP mailbox))
