@@ -133,9 +133,9 @@
                   (or (and '"FLAGS" SP
                            :params (list :flags flag-list))
                       (and '"LIST" SP
-                           :params (list :mailbox-list mailbox-list))
+                           :params mailbox-list)
                       (and '"LSUB" SP
-                           :params (list :mailbox-list mailbox-list))
+                           :params mailbox-list)
                       (and '"SEARCH"
                            :params (list :result (list (* SP number))))
                       (and '"STATUS" SP
