@@ -40,6 +40,7 @@ defined amount of octets."
 (defun eimap-network-send (output)
   "Send IMAP data.  Must be called with the process buffer
 active."
+  ;; XXX this reorders multiple overlays at point
   (let ((outovr (make-overlay (1- (point)) (point))))
     (overlay-put outovr 'after-string
                  (propertize output 'face '(:foreground "red")))
