@@ -79,7 +79,7 @@
                           (list
                            :charsets (list (opt SP "(" astring
                                                 (* SP astring) ")"))))
-                     capability-data
+                     capability-data-1
                      (and '"PERMANENTFLAGS" SP
                           :params (list :flags flag-list))
                      (and '"UIDNEXT" SP
@@ -94,25 +94,26 @@
                                                                 (any))))))))
                     "]" SP)
 
-    (capability-data '"CAPABILITY"
-                     :params
-                     (list
-                      :capabilities
-                      (list (+ SP ;; (or (and "AUTH=" (cons 'AUTH
-                               ;; atom)))
-                               atom))
-                      `(l --
-                          (delq nil (mapcar
-                                     (lambda (e)
-                                       (unless (string-match "^AUTH=" e)
-                                         (upcase e)))
-                                     l))
-                          :auth
-                          (delq nil (mapcar
-                                     (lambda (e)
-                                       (when (string-match "^AUTH=\\(.*\\)" e)
-                                         (upcase (match-string 1 e))))
-                                     l)))))
+    (capability-data :method capability-data-1)
+    (capability-data-1 '"CAPABILITY"
+                       :params
+                       (list
+                        :capabilities
+                        (list (+ SP ;; (or (and "AUTH=" (cons 'AUTH
+                                 ;; atom)))
+                                 atom))
+                        `(l --
+                            (delq nil (mapcar
+                                       (lambda (e)
+                                         (unless (string-match "^AUTH=" e)
+                                           (upcase e)))
+                                       l))
+                            :auth
+                            (delq nil (mapcar
+                                       (lambda (e)
+                                         (when (string-match "^AUTH=\\(.*\\)" e)
+                                           (upcase (match-string 1 e))))
+                                       l)))))
 
     (flag-list "(" (list (opt flag (* SP flag))) ")")
     (flag (or ;; '"\\Answered"
