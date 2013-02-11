@@ -264,8 +264,9 @@
 (eval '(progn "
 ("
 
-(eimap-gen '(:tag "c0" :method AUTHENTICATE :auth-mech "PLAIN" :auth-token "FOo="))
-(eimap-gen '(:tag "c1" :method CREATE :mailbox "föo"))
+(eimap-generate '(:tag "c0" :method AUTHENTICATE :auth-mech "PLAIN" :auth-token "FOo="))
+(eimap-generate '(:tag "c1" :method CREATE :mailbox "föo"))
+(eimap-generate '(:tag "c2" :method SEARCH :keys (ALL (SEEN) (NOT . DELETED) SEEN)))
 ;(eimap-gen (list :tag "c0"))
 ;;; (:method SEARCH :keys (:from "foo" :not (:from "foobar")))
 ;;; (:method SEARCH :keys ((FROM . "foo") (NOT . (FROM . "foobar"))))
