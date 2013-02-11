@@ -507,13 +507,22 @@ Note: a PE can't \"call\" rules by name."
 (peg-add-method normalize-generator cons (a &rest b)
   (peg-normalize
    `(and (action-consume
+          ;; (message "stack: %s for (%s . %s)"
+          ;;          (pp-to-string (peg-thunks-stack))
+          ;;          (pp-to-string ',a)
+          ;;          (pp-to-string ',b))
           (let ((c (peg-pop-current-list)))
+            ;; (message "got: %s" (pp-to-string c))
             (when (consp c)
-              (peg-push-list-on-stack (list (cdr c)))
-              (peg-push-list-on-stack (list (car c)))
+              ;; need to push a list with lists as content.
+              (peg-push-list-on-stack `((,(car c)) (,(cdr c))))
+              ;; (message "is consp. stack now: %s"
+              ;;          (pp-to-string (peg-thunks-stack)))
               t)))
          (list ,a)
-         (list ,@b))))
+         (list ,@b)
+         (action-consume
+          (null (peg-pop-list-from-stack))))))
 
 (peg-add-method normalize-generator substring (&rest args)
   (peg-normalize
