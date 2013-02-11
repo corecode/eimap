@@ -17,10 +17,17 @@
   (while (not (eq eimap-state :authenticated))
     (sleep-for 1))
   (eimap-request '(:method SELECT :mailbox "INBOX"))
-  (eimap-request '(:method SEARCH :keys ((NOT . DELETED)))
-                 :cbdata "foo"
-                 :done (lambda (data cbdata)
-                         (message "callback data %s cbdata %s"
-                                  (pp-to-string data)
-                                  (pp-to-string cbdata))))
-  (eimap-request '(:method FETCH :uids (:from 1 :to *) :attr FAST)))
+  (eimap-request '(:method FETCH :ids (:from 1 :to 4) :attr FAST))
+  (let* ((query '((NOT . DELETED)))
+         (req `(:method SEARCH :keys ,query)))
+    (when (member "ESEARCH" eimap-capabilities)
+      (setq req (plist-put req :return 'ALL)))
+    (eimap-request req
+                   :cbdata "foo"
+                   :done (lambda (data cbdata)
+                           (message "callback data %s cbdata %s"
+                                    (pp-to-string data)
+                                    (pp-to-string cbdata))))))
+
+;; check out (switch-to-buffer-other-window "*Messages*")
+;; that's where all the parsed data arrived
