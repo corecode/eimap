@@ -97,6 +97,7 @@ active."
     (when (and cont-strs (not continue))
       (setq continue 'internal)
       (setq data (plist-put data :continue continue)))
+    (setq data (plist-put data :tag tag))
     (setq data (plist-put data :req-str req-str))
     (setq data (plist-put data :cont-strs cont-strs))
     (setq tag-data (cons tag data))
