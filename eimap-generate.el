@@ -208,8 +208,12 @@
    (quoted "\"" `(str -- (eimap-gen-quote-string str)) (substring (* QUOTED-CHAR)) "\"")
    (literal (literalstr))
 
-   (number `(n -- (number-to-string n)) (substring (+ [0-9])))
-   (nz-number `(n -- (number-to-string n)) (substring [1-9] (* [0-9])))
+   (number (if (action (integerp (peg-peek-current-list))))
+           `(n -- (number-to-string n)) (substring (+ [0-9])))
+   (nz-number (if (action (let ((n (peg-peek-current-list)))
+                            (and (integerp n)
+                                 (> n 0)))))
+              `(n -- (number-to-string n)) (substring [1-9] (* [0-9])))
 
    (base64 (substring (* 4base64-char) (opt base64-terminal)))
    (base64-terminal (or (and base64-char base64-char "==")
