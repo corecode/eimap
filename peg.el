@@ -589,12 +589,24 @@ Note: a PE can't \"call\" rules by name."
 	   (peg-record-failure ',exp) ; for error reporting
 	   nil))))
 
+(defun peg-recursive-list-length (l)
+  (let ((count 0))
+    (while (and (listp l) l)
+      (setq count (+ count (peg-recursive-list-length (car l))))
+      (setq l (cdr l)))
+    (when l
+      (setq count (1+ count)))
+    count))
+
 (defun peg-record-failure (exp)
   ;; some numbers magic: when parsing, point grows, but when
   ;; generating, peg-thunks-stack shrinks; therefore use a
   ;; negative length to have the same greedy behavior.
+  ;; (message "match fail: `%s'/%d %s %s" (buffer-string) (point)
+  ;;          (pp-to-string peg-thunks)
+  ;;          (pp-to-string exp))
   (let ((pos (if peg-creating-generator
-                 (- (length (-flatten (peg-thunks-stack))))
+                 (- (peg-recursive-list-length (peg-thunks-stack)))
                (point))))
     (cond ((= pos (car peg-errors))
            (setcdr peg-errors (cons exp (cdr peg-errors))))
