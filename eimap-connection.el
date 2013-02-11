@@ -137,35 +137,53 @@ active."
          (method (plist-get reply :method)))
     (case type
       ('continue
-       (let* ((tag eimap-continue-tag)
-              (tag-record (assoc-string tag eimap-outstanding-tags))
-              (tag-data (cdr tag-record))
-              (continue (plist-get tag-data :continue))
-              (cbdata (plist-get tag-data :cbdata)))
-         (when (null continue)
-           (error "Continuation without handler for request data %S" tag-data))
-         (case continue
-           ('internal
-            (eimap-process-common-continue tag-data))
-           (t
-            (setq data (funcall continue params cbdata))
-            (setcdr tag-record (plist-put tag-data :cbdata cbdata))))))
+       (eimap-process-continue-reply params))
       ('data
-       (let ((handler (gethash method eimap-method-dispatch-table))
-             (handler-params (plist-get params :params)))
-         (apply handler (list params handler-params))))
+       (eimap-process-data-reply params))
       ('tag
-       (let* ((tag (plist-get params :tag))
-              (tag-record (assoc-string tag eimap-outstanding-tags))
-              (tag-data (cdr tag-record))
-              (done-handler (plist-get tag-data :done))
-              (cbdata (plist-get tag-data :cbdata)))
-         (when done-handler
-           (funcall done-handler params cbdata))
-         (setq eimap-outstanding-tags (delq tag-record eimap-outstanding-tags))
-         (eimap-process-req-queue))))))
+       (eimap-process-tag-reply params)))))
+
+(defun eimap-process-continue-reply (data)
+  "Handle a continue reply from the server."
+  (let* ((tag eimap-continue-tag)
+         (tag-record (assoc-string tag eimap-outstanding-tags))
+         (tag-data (cdr tag-record))
+         (continue (plist-get tag-data :continue))
+         (cbdata (plist-get tag-data :cbdata)))
+    (when (null continue)
+      (error "Continuation without handler for request data %S" tag-data))
+    (case continue
+      ('internal
+       (eimap-process-common-continue tag-data))
+      (t
+       (setq data (funcall continue data cbdata))
+       (setcdr tag-record (plist-put tag-data :cbdata cbdata))))))
+
+(defun eimap-process-data-reply (data)
+  "Handle an untagged data reply from the server."
+  (let ((params (plist-get data :params))
+        (resp-code (plist-get data :resp-code)))
+    (when resp-code
+      (eimap-dispatch-method resp-code data params))
+    (eimap-dispatch-method method data params)))
+
+(defun eimap-process-tag-reply (data)
+  "Handle a tagged reply from the server."
+  (let* ((tag (plist-get data :tag))
+         (tag-record (assoc-string tag eimap-outstanding-tags))
+         (tag-data (cdr tag-record))
+         (done-handler (plist-get tag-data :done))
+         (cbdata (plist-get tag-data :cbdata))
+         (resp-code (plist-get data :resp-code)))
+    (when resp-code
+      (eimap-dispatch-method resp-code data (plist-get data :params)))
+    (when done-handler
+      (funcall done-handler data cbdata))
+    (setq eimap-outstanding-tags (delq tag-record eimap-outstanding-tags))
+    (eimap-process-req-queue)))
 
 (defun eimap-process-common-continue (data)
+  "Send literal after server prompted us for continuation."
   (let* ((cont-strs (plist-get data :cont-strs))
          (next-str (car cont-strs))
          (next-cont-strs (cdr cont-strs)))

@@ -3,8 +3,10 @@
 (require 'cl)
 
 (defun eimap-gen-quote-string (str)
+  "Quote \" and \\ for IMAP quoted strings."
   (replace-regexp-in-string "[\\\"]" "\\\\\\&" str))
 
+;;; extend the generator with a literalstr builtin
 (peg-add-method normalize-generator literalstr ()
   `(literalstr))
 
@@ -19,6 +21,7 @@
   "IMAP literal")
 
 (defmacro eimap-defgen (funname &rest rules)
+  "Build the generator function for eimap."
   (declare (indent 1))
   `(defun ,funname (data)
      (let ((result
