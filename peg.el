@@ -450,14 +450,19 @@ Note: a PE can't \"call\" rules by name."
 (defun peg-pop-list-from-stack ()
   "Remove and return a whole list from the data stack."
   (prog1
-      (car (peg-thunks-stack))
+      (if (null (peg-thunks-stack))
+          (make-symbol "--peg-empty-stack--")
+        (car (peg-thunks-stack)))
     (peg-thunks-assemble (peg-thunks-strings) (cdr (peg-thunks-stack)))))
 
 (defun peg-pop-current-list ()
   "Remove and return the first element of the first list on the data stack."
   (let ((top-list (peg-pop-list-from-stack)))
     (peg-push-list-on-stack (cdr top-list))
-    (car top-list)))
+    ;; make sure we don't supply infinite nils at the end
+    (if (null top-list)
+        (make-symbol "--peg-list-end--")
+      (car top-list))))
 
 (defun peg-peek-current-list ()
   "Return the first element of the first list on the data stack."
