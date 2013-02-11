@@ -1,5 +1,10 @@
 ;;; -*- mode: emacs-lisp; -*-
-;;; Brief overview how to use it
+
+;;; REQUIREMENTS
+
+; (package-install 'dash)
+
+;;; USAGE TEASER
 
 (add-to-list 'load-path default-directory)
 
