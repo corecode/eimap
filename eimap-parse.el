@@ -174,8 +174,7 @@
 
 
 ;;; message data
-    (message-data :method
-                  (or (and :method 'EXPUNGE
+    (message-data (or (and :method 'EXPUNGE
                            :params (list :msgid number SP "EXPUNGE"))
                       (and :method 'FETCH
                            :params (list :msgid number SP "FETCH" SP msg-att))))
