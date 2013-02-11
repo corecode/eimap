@@ -1,3 +1,4 @@
+;;; -*- mode: emacs-lisp; -*-
 ;;; Brief overview how to use it
 
 (add-to-list 'load-path default-directory)
