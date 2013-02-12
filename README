@@ -1,8 +1,28 @@
 ;;; -*- mode: emacs-lisp; -*-
 
+;;; WHAT IS THIS?
+
+; eimap is an experiment to approach IMAP processing from a new angle.
+;
+; the protocol parser and generator are both formally generated from
+; grammars.
+;
+; instead of using a request-reply approach (which does not work well
+; with IMAP), eimap uses a streaming data model:
+;
+; data from the server is automatically parsed into usable lisp data
+; structures and directly handed to a handler for the incoming data
+; (not shown in the sample code below).
+;
+; if the application requires other data that has not been streamed in
+; yet, it can request the server to send this data, using the
+; `eimap-request' method (see example below).
+
+
 ;;; REQUIREMENTS
 
 ; (package-install 'dash)
+
 
 ;;; USAGE TEASER
 
