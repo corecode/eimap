@@ -48,7 +48,8 @@ active."
 
 
 (defun* eimap-open (host &key (user (user-login-name)) (port "imaps")
-                         &aux (procname (format "*imap %s*" host)))
+                         (ssl (member port '("imaps" "993" 993)))
+                         &aux (procname (format "*imap %s:%s*" host port)))
   "Open IMAP connection and set up buffer"
   (with-current-buffer (generate-new-buffer procname)
     (set (make-local-variable 'eimap-state) :connecting)
@@ -61,20 +62,36 @@ active."
     (set (make-local-variable 'eimap-outstanding-tags) nil)
     (set (make-local-variable 'eimap-req-queue) nil)
     (set (make-local-variable 'eimap-tag) 0)
-    (let ((coding-system-for-read 'binary)
-          (coding-system-for-write 'binary)
-          process)
-      (setq process
-            (open-network-stream
-             procname
-             (current-buffer)
-             host port
-             :nowait t
-             :type 'ssl))
+    (let* ((coding-system-for-read 'binary)
+           (coding-system-for-write 'binary)
+           open-args process)
+      ;; we only set the whole shebang for starttls so that we can
+      ;; observe the greeting for ssl
+      (if ssl
+          (setq open-args `(:type ssl))
+        (setq open-args
+              (list :end-of-command "^.*\r\n"
+                    :capability-command "x1 CAPABILITY\r\n"
+                    :end-of-capability "^x1 .*\r\n"
+                    :starttls-function
+                    (lambda (cap)
+                      "x2 STARTTLS\r\n")
+                    :success "^x2 OK.*\r\n")))
+      (setq process (apply #'open-network-stream
+                           procname
+                           (current-buffer)
+                           host port
+                           :nowait t
+                           open-args))
+      (when (null process)
+        (error "Could not connect to %s@%s:%s" user host port))
       (set-process-filter process 'eimap-network-recv)
       (set-process-sentinel process 'eimap-sentinel)
+      (setq eimap-state :connected)
       ;; trigger parsing of greeting
-      (eimap-network-recv process ""))
+      (eimap-network-recv process "")
+      (unless (eq eimap-state :authenticated)
+        (eimap-authenticate)))
     (current-buffer)))
 
 
