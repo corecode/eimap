@@ -1,5 +1,4 @@
 (require 'peg)
-(require 'dash)
 (require 'cl)
 
 (defun eimap-gen-quote-string (str)
@@ -29,12 +28,16 @@
                     (peg-generator-data 'data))
                (peg-translate-rules rules)))
            result-strs)
-       (while (destructuring-bind (front back) (-split-with #'stringp result)
-                (push (apply #'concat front) result-strs)
-                (when back
-                  (assert (symbolp (car back)))
-                  (pop back))
-                (setf result back)))
+       (while result
+         (let ((front "")
+               next)
+           (catch 'out
+             (while (setq next (pop result))
+               (if (stringp next)
+                   (setq front (concat front next))
+                 (assert (symbolp next))
+                 (throw 'out nil))))
+           (push front result-strs)))
        (nreverse result-strs))))
 
 (eval-when-compile

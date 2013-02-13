@@ -1,3 +1,0 @@
-[submodule "dash"]
-	path = dash
-	url = git://github.com/magnars/dash.el.git

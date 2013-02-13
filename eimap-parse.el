@@ -1,5 +1,4 @@
 (require 'peg)
-(require 'dash)
 
 (defun eimap-parse-unquote-string (str)
   (replace-regexp-in-string "\\\\\\(.\\)" "\\1" str))
@@ -176,7 +175,7 @@
                             (list number))
                         (* "," (or seq-range
                                    (list number))))
-                  `(l -- (-flatten l)))
+                  `(l -- (apply #'nconc l)))
     (seq-range  number ":" number
                 ;; directly expand
                 `(from to -- (if (< from to)
