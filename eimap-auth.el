@@ -4,7 +4,8 @@
 (defun eimap-authenticate ()
   "Initiate authentication"
   (if (null eimap-auth-methods)
-      (eimap-request '(:method "CAPABILITY"))
+      (eimap-request '(:method CAPABILITY)
+                     :done 'eimap-authenticate-cb)
     (let ((mech (sasl-find-mechanism eimap-auth-methods)))
       (when (null mech)
         (error "No SASL mechanism found do handle server supported methods: %S" eimap-auth-methods))
