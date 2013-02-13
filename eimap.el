@@ -16,19 +16,21 @@
       (setq ,table (make-hash-table :size 20)))))
 
 (defmacro eimap-define-method (table method args &optional docstring &rest body)
-  "Define a handler for dispatching `data-upcall's."
+  "Define a handler for dispatching upcalls.
+
+ARGS should be (upcall-data data)."
   (declare (indent 3)
            (doc-string 4)
            (debug 3))
   `(puthash ',method (lambda ,args ,docstring . ,body) ,(eimap-method-table-name table)))
 
 (defmacro eimap-create-dispatch (table)
-  "Returns a lambda suitable for passing to `eimap-open''s `data-upcall'."
+  "Returns a lambda suitable for passing to `eimap-open''s `upcall'."
   (let ((table (eimap-method-table-name table)))
-    `(lambda (method data)
+    `(lambda (upcall-data method data)
        (let ((handler (or (gethash method ,table)
                           (gethash 'default ,table))))
          (when handler
-             (funcall handler data))))))
+             (funcall handler upcall-data data))))))
 
 (provide 'eimap)

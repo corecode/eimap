@@ -28,7 +28,7 @@
 
 (eimap-declare-dispatch-table eimap-README)
 
-(eimap-define-method eimap-README connection-state (data)
+(eimap-define-method eimap-README connection-state (ud data)
   "Handle connection state change."
   (case (plist-get data :state)
     ('connecting
@@ -49,7 +49,7 @@
                                        (pp-to-string data)
                                        (pp-to-string cbdata))))))))
 
-(eimap-define-method eimap-README default (data)
+(eimap-define-method eimap-README default (ud data)
   "Catch-all method for unhandled data."
   (message "IMAP %s %s"
            method
@@ -61,10 +61,12 @@
      ;; default is IMAP+STARTTLS.
      ;; pass :port "imaps" for SSL connection to port 993
      ;;
-     ;; `data-upcall' is the umbilical cord from the backend to the
+     ;; `upcall' is the umbilical cord from the backend to the
      ;; application.  `eimap-create-dispatch' hooks this up to the
      ;; functions defined by the dispatch table above.
-     :data-upcall (eimap-create-dispatch eimap-README)))
+     ;; `upcall-data' is passed to the callback as first argument.
+     :upcall (eimap-create-dispatch eimap-README)
+     :upcall-data "o hi"))
 
 ;; check out (switch-to-buffer-other-window "*Messages*")
 ;; that's where all the parsed data arrived

@@ -2,7 +2,7 @@
 
 (defun* eimap-open (host &key (user (user-login-name)) (port "imap")
                          (ssl (member port '("imaps" "993" 993)))
-                         data-upcall
+                         upcall upcall-data
                          &aux (procname (format "*imap %s:%s*" host port)))
   "Open IMAP connection and set up buffer"
   (with-current-buffer (generate-new-buffer procname)
@@ -10,7 +10,8 @@
     (set (make-local-variable 'eimap-user) user)
     (set (make-local-variable 'eimap-host) host)
     (set (make-local-variable 'eimap-port) port)
-    (set (make-local-variable 'eimap-data-upcall) data-upcall)
+    (set (make-local-variable 'eimap-upcall) upcall)
+    (set (make-local-variable 'eimap-upcall-data) upcall-data)
     (set (make-local-variable 'eimap-capabilities) nil)
     (set (make-local-variable 'eimap-auth-methods) nil)
     (set (make-local-variable 'eimap-continue-tag) nil)
@@ -51,19 +52,39 @@
     (current-buffer)))
 
 (defun eimap-sentinel (conn state)
-  (message "imap goes poof"))
+  (with-current-buffer (process-buffer conn)
+    (eimap-set-state 'disconnected)))
 
 (defun eimap-set-state (new-state)
   (setq eimap-state new-state)
-  (eimap-data-upcall 'connection-state (list :state new-state)))
+  (eimap-upcall 'connection-state (list :state new-state)))
 
 
 ;;;
 ;;; send
 ;;;
 
-(defun* eimap-request (req &rest data &key continue done cbdata barrier)
-  "Tag request and setup callback hooks"
+(defun eimap-request* (conn req &rest rest)
+  "Issues `eimap-request' REQ on CONN."
+  (with-current-buffer conn
+    (apply #'eimap-request req rest)))
+
+(defun* eimap-request (req &rest data &key cbdata done barrier continue)
+  "Enqueue REQ to the server.
+
+DONE, CONTINUE, and BARRIER are callbacks with arguments (REQDATA
+CBDATA); the value returned from the callback becomes the next
+CBDATA.
+
+DONE is called when the server completes the request.
+
+BARRIER is called before the request is executed, and at the same
+time BARRIER ensures that this request is not issued in parallel
+with any previous request, but does not prevent following
+requests from being issued in parallel.
+
+CONTINUE is called when the server prompts for a continuation;
+probably you don't want to use this."
   (let* ((tag (eimap-new-tag))
          (req (plist-put req :tag tag))
          ;; eimap-generate returns a list of strings, each for one
@@ -214,7 +235,7 @@ defined amount of octets."
       (setq eimap-capabilities (plist-get data :capabilities)
             eimap-auth-methods (plist-get data :auth)))
     (when resp-code
-      (eimap-data-upcall resp-code data))
+      (eimap-upcall resp-code data))
     (when (eq method 'cond-state)
       (case (plist-get data :state)
         ('PREAUTH
@@ -222,7 +243,7 @@ defined amount of octets."
            (eimap-set-state 'authenticated)))
         ('BYE
          (message "server closing connection: %s" (plist-get data :text)))))
-    (eimap-data-upcall method data)))
+    (eimap-upcall method data)))
 
 (defun eimap-process-tag-reply (data)
   "Handle a tagged reply from the server."
@@ -233,15 +254,15 @@ defined amount of octets."
          (cbdata (plist-get tag-data :cbdata))
          (resp-code (plist-get data :resp-code)))
     (when resp-code
-      (eimap-data-upcall resp-code data))
+      (eimap-upcall resp-code data))
     (when done-handler
       (funcall done-handler data cbdata))
     (setq eimap-outstanding-tags (delq tag-record eimap-outstanding-tags))
     (eimap-process-req-queue)))
 
-(defun eimap-data-upcall (method data)
+(defun eimap-upcall (method data)
   "Report data to the application."
-  (when eimap-data-upcall
-    (funcall eimap-data-upcall method data)))
+  (when eimap-upcall
+    (funcall eimap-upcall eimap-upcall-data method data)))
 
 (provide 'eimap-connection)
