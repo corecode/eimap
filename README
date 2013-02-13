@@ -25,6 +25,36 @@
 
 (require 'cl)
 (require 'eimap)
+
+(eimap-declare-dispatch-table eimap-README)
+
+(eimap-define-method eimap-README connection-state (data)
+  "Handle connection state change."
+  (case (plist-get data :state)
+    ('connecting
+     (split-window-vertically)
+     (switch-to-buffer (current-buffer)))
+
+    ('authenticated
+     (eimap-request '(:method SELECT :mailbox "INBOX"))
+     (eimap-request '(:method FETCH :ids (:from 1 :to 4) :attr FAST))
+     (let* ((query '((NOT . DELETED)))
+            (req `(:method SEARCH :keys ,query)))
+       (when (member "ESEARCH" eimap-capabilities)
+         (setq req (plist-put req :return 'ALL)))
+       (eimap-request req
+                      :cbdata "foo"
+                      :done (lambda (data cbdata)
+                              (message "callback data %s cbdata %s"
+                                       (pp-to-string data)
+                                       (pp-to-string cbdata))))))))
+
+(eimap-define-method eimap-README default (data)
+  "Catch-all method for unhandled data."
+  (message "IMAP %s %s"
+           method
+           (pp-to-string data)))
+
 (with-current-buffer
     (eimap-open
      "0x2c.org" :user "2"
@@ -32,34 +62,9 @@
      ;; pass :port "imaps" for SSL connection to port 993
      ;;
      ;; `data-upcall' is the umbilical cord from the backend to the
-     ;; application.  In this case the application is quite primitive.
-     :data-upcall
-     (lambda (method data)
-       (case method
-         ('connection-state
-          (case (plist-get data :state)
-            ('connecting
-             (split-window-vertically)
-             (switch-to-buffer (current-buffer)))
-
-            ('authenticated
-             (eimap-request '(:method SELECT :mailbox "INBOX"))
-             (eimap-request '(:method FETCH :ids (:from 1 :to 4) :attr FAST))
-             (let* ((query '((NOT . DELETED)))
-                    (req `(:method SEARCH :keys ,query)))
-               (when (member "ESEARCH" eimap-capabilities)
-                 (setq req (plist-put req :return 'ALL)))
-               (eimap-request req
-                              :cbdata "foo"
-                              :done (lambda (data cbdata)
-                                      (message "callback data %s cbdata %s"
-                                               (pp-to-string data)
-                                               (pp-to-string cbdata))))))))
-
-         (t
-          (message "IMAP %s %s"
-                   method
-                   (pp-to-string data)))))))
+     ;; application.  `eimap-create-dispatch' hooks this up to the
+     ;; functions defined by the dispatch table above.
+     :data-upcall (eimap-create-dispatch eimap-README)))
 
 ;; check out (switch-to-buffer-other-window "*Messages*")
 ;; that's where all the parsed data arrived

@@ -4,21 +4,31 @@
 (require 'eimap-connection)
 (require 'eimap-auth)
 
-(defvar eimap-method-dispatch-table)
-(setq eimap-method-dispatch-table (make-hash-table :size 20))
+(eval-and-compile
+  (defun eimap-method-table-name (table-name)
+    (intern (format "eimap-method-table-%s" table-name))))
 
-(defmacro eimap-define-method (method args &optional docstring &rest body)
-  "Define a handler for incoming :type 'data :methods."
-  (declare (indent defun)
-           (doc-string 3)
-           (debug defun))
-  `(puthash ',method (lambda ,args ,docstring . ,body) eimap-method-dispatch-table))
+(defmacro eimap-declare-dispatch-table (table-name)
+  "Declare a function dispatch table."
+  (let ((table (eimap-method-table-name table-name)))
+    `(progn
+      (defvar ,table)
+      (setq ,table (make-hash-table :size 20)))))
 
-(defun eimap-dispatch-method (method data)
-  "Execute handler for METHOD"
-  (let ((handler (gethash method eimap-method-dispatch-table)))
-    (if handler
-        (funcall handler data)
-      (message "No IMAP handler for %s:\n%s" method (pp-to-string data)))))
+(defmacro eimap-define-method (table method args &optional docstring &rest body)
+  "Define a handler for dispatching `data-upcall's."
+  (declare (indent 3)
+           (doc-string 4)
+           (debug 3))
+  `(puthash ',method (lambda ,args ,docstring . ,body) ,(eimap-method-table-name table)))
+
+(defmacro eimap-create-dispatch (table)
+  "Returns a lambda suitable for passing to `eimap-open''s `data-upcall'."
+  (let ((table (eimap-method-table-name table)))
+    `(lambda (method data)
+       (let ((handler (or (gethash method ,table)
+                          (gethash 'default ,table))))
+         (when handler
+             (funcall handler data))))))
 
 (provide 'eimap)
