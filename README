@@ -55,18 +55,17 @@
            method
            (pp-to-string data)))
 
-(with-current-buffer
-    (eimap-open
-     "0x2c.org" :user "2"
-     ;; default is IMAP+STARTTLS.
-     ;; pass :port "imaps" for SSL connection to port 993
-     ;;
-     ;; `upcall' is the umbilical cord from the backend to the
-     ;; application.  `eimap-create-dispatch' hooks this up to the
-     ;; functions defined by the dispatch table above.
-     ;; `upcall-data' is passed to the callback as first argument.
-     :upcall (eimap-create-dispatch eimap-README)
-     :upcall-data "o hi"))
+(eimap-open
+ "0x2c.org" :user "2"
+ ;; default is IMAP+STARTTLS.
+ ;; pass :port "imaps" for SSL connection to port 993
+ ;;
+ ;; `upcall' is the umbilical cord from the backend to the
+ ;; application.  `eimap-create-dispatch' hooks this up to the
+ ;; functions defined by the dispatch table above.
+ ;; `upcall-data' is passed to the callback as first argument.
+ :upcall (eimap-create-dispatch eimap-README)
+ :upcall-data "o hi")
 
 ;; check out (switch-to-buffer-other-window "*Messages*")
 ;; that's where all the parsed data arrived
