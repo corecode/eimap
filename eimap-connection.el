@@ -135,8 +135,7 @@ active."
   "Parse network reply and run protocol state machine."
   (let* ((reply (eimap-parse))
          (type (plist-get reply :type))
-         (params (plist-get reply :params))
-         (method (plist-get reply :method)))
+         (params (plist-get reply :params)))
     (case type
       ('continue
        (eimap-process-continue-reply params))
@@ -163,11 +162,11 @@ active."
 
 (defun eimap-process-data-reply (data)
   "Handle an untagged data reply from the server."
-  (let ((params (plist-get data :params))
+  (let ((method (plist-get data :method))
         (resp-code (plist-get data :resp-code)))
     (when resp-code
-      (eimap-dispatch-method resp-code data params))
-    (eimap-dispatch-method method data params)))
+      (eimap-dispatch-method resp-code data))
+    (eimap-dispatch-method method data)))
 
 (defun eimap-process-tag-reply (data)
   "Handle a tagged reply from the server."
@@ -178,7 +177,7 @@ active."
          (cbdata (plist-get tag-data :cbdata))
          (resp-code (plist-get data :resp-code)))
     (when resp-code
-      (eimap-dispatch-method resp-code data (plist-get data :params)))
+      (eimap-dispatch-method resp-code data))
     (when done-handler
       (funcall done-handler data cbdata))
     (setq eimap-outstanding-tags (delq tag-record eimap-outstanding-tags))

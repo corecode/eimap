@@ -52,16 +52,17 @@
 
     (response-data :type 'data
                    "*" SP
-                   (or resp-cond-data
-                       mailbox-data
-                       message-data
-                       capability-data) CRLF)
+                   :params (list
+                            (or resp-cond-data
+                                mailbox-data
+                                message-data
+                                capability-data)) CRLF)
 
 
 ;;; response status and code
 
     (resp-cond-data  :method 'cond-state
-                     :params (list resp-cond-state))
+                     resp-cond-state)
     (resp-cond-state :state (or '"OK"
                                 '"NO"
                                 '"BAD"
@@ -76,45 +77,42 @@
                      '"READ-ONLY"
                      '"READ-WRITE"
                      (and '"BADCHARSET"
-                          :params
-                          (list
-                           :charsets (list (opt SP "(" astring
-                                                (* SP astring) ")"))))
-                     capability-data-1
+                          :charsets (list (opt SP "(" astring
+                                               (* SP astring) ")")))
+                     (and '"CAPABILITY"
+                          capability-data-1)
                      (and '"PERMANENTFLAGS" SP
-                          :params (list :flags flag-list))
+                          :flags flag-list)
                      (and '"UIDNEXT" SP
-                          :params (list :uidnext number))
+                          :uidnext number)
                      (and '"UIDVALIDITY" SP
-                          :params (list :uidvalidity number))
+                          :uidvalidity number)
                      (and '"UNSEEN" SP
-                          :params (list :unseen number))
+                          :unseen number)
                      (and atom
-                          :params (list (opt :data SP
-                                             (substring (+ (and (not "]")
-                                                                (any))))))))
+                          (opt :data SP
+                               (substring (+ (and (not "]")
+                                                  (any)))))))
                     "]" SP)
 
-    (capability-data :method capability-data-1)
-    (capability-data-1 '"CAPABILITY"
-                       :params
-                       (list
-                        :capabilities
-                        (list (+ SP ;; (or (and "AUTH=" (cons 'AUTH
-                                 ;; atom)))
-                                 atom))
-                        `(l --
-                            (delq nil (mapcar
-                                       (lambda (e)
-                                         (unless (string-match "^AUTH=" e)
-                                           (upcase e)))
-                                       l))
-                            :auth
-                            (delq nil (mapcar
-                                       (lambda (e)
-                                         (when (string-match "^AUTH=\\(.*\\)" e)
-                                           (upcase (match-string 1 e))))
-                                       l)))))
+    (capability-data :method '"CAPABILITY"
+                     capability-data-1)
+    (capability-data-1 :capabilities
+                       (list (+ SP ;; (or (and "AUTH=" (cons 'AUTH
+                                ;; atom)))
+                                atom))
+                       `(l --
+                           (delq nil (mapcar
+                                      (lambda (e)
+                                        (unless (string-match "^AUTH=" e)
+                                          (upcase e)))
+                                      l))
+                           :auth
+                           (delq nil (mapcar
+                                      (lambda (e)
+                                        (when (string-match "^AUTH=\\(.*\\)" e)
+                                          (upcase (match-string 1 e))))
+                                      l))))
 
     (flag-list "(" (list (opt flag (* SP flag))) ")")
     (flag (or ;; '"\\Answered"
@@ -132,24 +130,24 @@
 
     (mailbox-data :method
                   (or (and '"FLAGS" SP
-                           :params (list :flags flag-list))
+                           :flags flag-list)
                       (and '"LIST" SP
-                           :params mailbox-list)
+                           mailbox-list)
                       (and '"LSUB" SP
-                           :params mailbox-list)
+                           mailbox-list)
                       (and '"SEARCH"
-                           :params (list :result (list (* SP number))))
+                           :result (list (* SP number)))
                       (and '"ESEARCH"
-                           :params (list (opt search-correlator)
-                                         (opt :uid 't SP "UID")
-                                         (* SP search-return-data)))
+                           (opt search-correlator)
+                           (opt :uid 't SP "UID")
+                           (* SP search-return-data))
                       (and '"STATUS" SP
-                           :params (list mailbox
-                                         SP "(" status-att-list ")"))
+                           mailbox
+                           SP "(" status-att-list ")")
                       (and 'EXISTS
-                           :params (list :exists number SP "EXISTS"))
+                           :exists number SP "EXISTS")
                       (and 'RECENT
-                           :params (list :recent number SP "RECENT"))))
+                           :recent number SP "RECENT")))
 
     (mailbox-list (list
                    "("
@@ -196,9 +194,9 @@
 
 ;;; message data
     (message-data (or (and :method 'EXPUNGE
-                           :params (list :msgid number SP "EXPUNGE"))
+                           :msgid number SP "EXPUNGE")
                       (and :method 'FETCH
-                           :params (list :msgid number SP "FETCH" SP msg-att))))
+                           :msgid number SP "FETCH" SP msg-att)))
     (msg-att "(" (or msg-att-dynamic
                      msg-att-static)
              (* SP (or msg-att-dynamic

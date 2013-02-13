@@ -14,31 +14,30 @@
            (debug defun))
   `(puthash ',method (lambda ,args ,docstring . ,body) eimap-method-dispatch-table))
 
-(defun eimap-dispatch-method (method data params)
+(defun eimap-dispatch-method (method data)
   "Execute handler for METHOD"
   (let ((handler (gethash method eimap-method-dispatch-table)))
     (if handler
-        (apply handler (list data params))
+        (funcall handler data)
       (message "No IMAP handler for %s:\n%s" method (pp-to-string data)))))
 
-(eimap-define-method cond-state (data params)
+(eimap-define-method cond-state (data)
   "Handle untagged OK/NO/BAD/BYE/PREAUTH messages"
   (let ((state (plist-get data :state)))
     (case state
       ('OK
-       (when (eq eimap-state :connecting)
-         (eimap-authenticate)))
+       t)
       ('PREAUTH
-       (when (eq state 'PREAUTH)
+       (when (eq eimap-state :connected)
          (setq eimap-state :authenticated)))
       ('BYE
-       (message "server closing connection: %s" (plist-get params :text)))
+       (message "server closing connection: %s" (plist-get data :text)))
       (('BAD 'NO)
        (warn "server unhappy: %s")))))
 
-(eimap-define-method CAPABILITY (data params)
+(eimap-define-method CAPABILITY (data)
   "Handle CAPABILITY updates"
-  (setq eimap-capabilities (plist-get params :capabilities)
-        eimap-auth-methods (plist-get params :auth)))
+  (setq eimap-capabilities (plist-get data :capabilities)
+        eimap-auth-methods (plist-get data :auth)))
 
 (provide 'eimap)
