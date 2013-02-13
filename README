@@ -39,7 +39,10 @@
 (add-to-list 'load-path default-directory)
 
 (require 'eimap)
-(with-current-buffer (eimap-open "0x2c.org" :user "2") ; connects via IMAPS/993
+(with-current-buffer (eimap-open "0x2c.org" :user "2")
+  ;; default is IMAP+STARTTLS.
+  ;; pass :port "imaps" for SSL connection to port 993
+
   (split-window-vertically)
   (switch-to-buffer (current-buffer))
 

@@ -47,7 +47,7 @@ active."
     (process-send-string (get-buffer-process (current-buffer)) output)))
 
 
-(defun* eimap-open (host &key (user (user-login-name)) (port "imaps")
+(defun* eimap-open (host &key (user (user-login-name)) (port "imap")
                          (ssl (member port '("imaps" "993" 993)))
                          &aux (procname (format "*imap %s:%s*" host port)))
   "Open IMAP connection and set up buffer"
