@@ -9,7 +9,7 @@
     (let ((mech (sasl-find-mechanism eimap-auth-methods)))
       (when (null mech)
         (error "No SASL mechanism found do handle server supported methods: %S" eimap-auth-methods))
-      (setq eimap-state :authenticating)
+      (eimap-set-state 'authenticating)
       (let* ((client (sasl-make-client mech eimap-user eimap-port eimap-host))
              (steps nil)
              (cbdata (list :client client
@@ -82,7 +82,7 @@ the password.
 
 XXX maybe detect if password was cached and discard on error?"
   (setq eimap-continue-tag nil)
-  (setq eimap-state :authenticated)
+  (eimap-set-state 'authenticated)
   (case (plist-get params :state)
     (OK
      (let* ((authtok (plist-get data :authtok))

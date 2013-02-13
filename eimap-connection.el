@@ -1,7 +1,133 @@
 (require 'cl)
 
+(defun* eimap-open (host &key (user (user-login-name)) (port "imap")
+                         (ssl (member port '("imaps" "993" 993)))
+                         data-upcall
+                         &aux (procname (format "*imap %s:%s*" host port)))
+  "Open IMAP connection and set up buffer"
+  (with-current-buffer (generate-new-buffer procname)
+    (set (make-local-variable 'eimap-state) nil)
+    (set (make-local-variable 'eimap-user) user)
+    (set (make-local-variable 'eimap-host) host)
+    (set (make-local-variable 'eimap-port) port)
+    (set (make-local-variable 'eimap-data-upcall) data-upcall)
+    (set (make-local-variable 'eimap-capabilities) nil)
+    (set (make-local-variable 'eimap-auth-methods) nil)
+    (set (make-local-variable 'eimap-continue-tag) nil)
+    (set (make-local-variable 'eimap-outstanding-tags) nil)
+    (set (make-local-variable 'eimap-req-queue) nil)
+    (set (make-local-variable 'eimap-tag) 0)
+    (let* ((coding-system-for-read 'binary)
+           (coding-system-for-write 'binary)
+           open-args process)
+      ;; we only set the whole shebang for starttls so that we can
+      ;; observe the greeting for ssl
+      (if ssl
+          (setq open-args `(:type ssl))
+        (setq open-args
+              (list :end-of-command "^.*\r\n"
+                    :capability-command "x1 CAPABILITY\r\n"
+                    :end-of-capability "^x1 .*\r\n"
+                    :starttls-function
+                    (lambda (cap)
+                      "x2 STARTTLS\r\n")
+                    :success "^x2 OK.*\r\n")))
+      (eimap-set-state 'connecting)
+      (setq process (apply #'open-network-stream
+                           procname
+                           (current-buffer)
+                           host port
+                           :nowait t
+                           open-args))
+      (when (null process)
+        (error "Could not connect to %s@%s:%s" user host port))
+      (set-process-filter process 'eimap-network-recv)
+      (set-process-sentinel process 'eimap-sentinel)
+      (eimap-set-state 'connected)
+      ;; trigger parsing of greeting
+      (eimap-network-recv process "")
+      (unless (eq eimap-state 'authenticated)
+        (eimap-authenticate)))
+    (current-buffer)))
+
 (defun eimap-sentinel (conn state)
   (message "imap goes poof"))
+
+(defun eimap-set-state (new-state)
+  (setq eimap-state new-state)
+  (eimap-data-upcall 'connection-state (list :state new-state)))
+
+
+;;;
+;;; send
+;;;
+
+(defun* eimap-request (req &rest data &key continue done cbdata barrier)
+  "Tag request and setup callback hooks"
+  (let* ((tag (eimap-new-tag))
+         (req (plist-put req :tag tag))
+         ;; eimap-generate returns a list of strings, each for one
+         ;; continuation step
+         (req-strs (eimap-generate req))
+         (req-str (car req-strs))
+         (cont-strs (cdr req-strs))
+         tag-data)
+    ;; prepare data for completion/continuation
+    ;; if we have continuation data, set a callback for it
+    (when (and cont-strs (not continue))
+      (setq continue 'internal)
+      (setq data (plist-put data :continue continue)))
+    (setq data (plist-put data :tag tag))
+    (setq data (plist-put data :req-str req-str))
+    (setq data (plist-put data :cont-strs cont-strs))
+    (setq tag-data (cons tag data))
+    ;; add to request queue and kick it
+    (add-to-list 'eimap-req-queue data t)
+    (eimap-process-req-queue)))
+
+(defun eimap-new-tag ()
+  "Generate new IMAP tag"
+  (setq eimap-tag (1+ eimap-tag))
+  (concat "e" (number-to-string eimap-tag)))
+
+(defun eimap-process-req-queue ()
+  "Issue queued requests when the time is right."
+  ;; do we have queued requests and all in-flight requests have drained?
+  (catch 'out
+    (while eimap-req-queue
+      (let* ((data (pop eimap-req-queue))
+             (tag (plist-get data :tag))
+             (barrier (plist-get data :barrier))
+             (continue (plist-get data :continue))
+             (req-str (plist-get data :req-str)))
+        ;; stop if:
+        ;; - this is a barrier and there are already requests inflight
+        ;; - we wait on a continue
+        (when (or (and barrier eimap-outstanding-tags)
+                  eimap-continue-tag)
+          ;; we popped too soon
+          (push data eimap-req-queue)
+          (throw 'out nil))
+        (when barrier
+          (funcall barrier (plist-get data :cbdata)))
+        (when continue
+          (setq eimap-continue-tag tag))
+        (push (cons tag data) eimap-outstanding-tags)
+        (eimap-network-send req-str)))))
+
+(defun eimap-network-send (output)
+  "Send IMAP data.  Must be called with the process buffer
+active."
+  ;; XXX this reorders multiple overlays at point
+  (let ((outovr (make-overlay (1- (point)) (point))))
+    (overlay-put outovr 'after-string
+                 (propertize output 'face '(:foreground "red")))
+    (process-send-string (get-buffer-process (current-buffer)) output)))
+
+
+;;;
+;;; receive
+;;;
 
 (defun eimap-network-recv (process output)
   "Process incoming network data, either line based replies or a
@@ -36,118 +162,6 @@ defined amount of octets."
           (throw 'end t)))
       nil)))
 
-
-(defun eimap-network-send (output)
-  "Send IMAP data.  Must be called with the process buffer
-active."
-  ;; XXX this reorders multiple overlays at point
-  (let ((outovr (make-overlay (1- (point)) (point))))
-    (overlay-put outovr 'after-string
-                 (propertize output 'face '(:foreground "red")))
-    (process-send-string (get-buffer-process (current-buffer)) output)))
-
-
-(defun* eimap-open (host &key (user (user-login-name)) (port "imap")
-                         (ssl (member port '("imaps" "993" 993)))
-                         &aux (procname (format "*imap %s:%s*" host port)))
-  "Open IMAP connection and set up buffer"
-  (with-current-buffer (generate-new-buffer procname)
-    (set (make-local-variable 'eimap-state) :connecting)
-    (set (make-local-variable 'eimap-user) user)
-    (set (make-local-variable 'eimap-host) host)
-    (set (make-local-variable 'eimap-port) port)
-    (set (make-local-variable 'eimap-capabilities) nil)
-    (set (make-local-variable 'eimap-auth-methods) nil)
-    (set (make-local-variable 'eimap-continue-tag) nil)
-    (set (make-local-variable 'eimap-outstanding-tags) nil)
-    (set (make-local-variable 'eimap-req-queue) nil)
-    (set (make-local-variable 'eimap-tag) 0)
-    (let* ((coding-system-for-read 'binary)
-           (coding-system-for-write 'binary)
-           open-args process)
-      ;; we only set the whole shebang for starttls so that we can
-      ;; observe the greeting for ssl
-      (if ssl
-          (setq open-args `(:type ssl))
-        (setq open-args
-              (list :end-of-command "^.*\r\n"
-                    :capability-command "x1 CAPABILITY\r\n"
-                    :end-of-capability "^x1 .*\r\n"
-                    :starttls-function
-                    (lambda (cap)
-                      "x2 STARTTLS\r\n")
-                    :success "^x2 OK.*\r\n")))
-      (setq process (apply #'open-network-stream
-                           procname
-                           (current-buffer)
-                           host port
-                           :nowait t
-                           open-args))
-      (when (null process)
-        (error "Could not connect to %s@%s:%s" user host port))
-      (set-process-filter process 'eimap-network-recv)
-      (set-process-sentinel process 'eimap-sentinel)
-      (setq eimap-state :connected)
-      ;; trigger parsing of greeting
-      (eimap-network-recv process "")
-      (unless (eq eimap-state :authenticated)
-        (eimap-authenticate)))
-    (current-buffer)))
-
-
-(defun eimap-new-tag ()
-  "Generate new IMAP tag"
-  (setq eimap-tag (1+ eimap-tag))
-  (concat "e" (number-to-string eimap-tag)))
-
-(defun* eimap-request (req &rest data &key continue done cbdata barrier)
-  "Tag request and setup callback hooks"
-  (let* ((tag (eimap-new-tag))
-         (req (plist-put req :tag tag))
-         ;; eimap-generate returns a list of strings, each for one
-         ;; continuation step
-         (req-strs (eimap-generate req))
-         (req-str (car req-strs))
-         (cont-strs (cdr req-strs))
-         tag-data)
-    ;; prepare data for completion/continuation
-    ;; if we have continuation data, set a callback for it
-    (when (and cont-strs (not continue))
-      (setq continue 'internal)
-      (setq data (plist-put data :continue continue)))
-    (setq data (plist-put data :tag tag))
-    (setq data (plist-put data :req-str req-str))
-    (setq data (plist-put data :cont-strs cont-strs))
-    (setq tag-data (cons tag data))
-    ;; add to request queue and kick it
-    (add-to-list 'eimap-req-queue data t)
-    (eimap-process-req-queue)))
-
-(defun eimap-process-req-queue ()
-  "Issue queued requests when the time is right."
-  ;; do we have queued requests and all in-flight requests have drained?
-  (catch 'out
-    (while eimap-req-queue
-      (let* ((data (pop eimap-req-queue))
-             (tag (plist-get data :tag))
-             (barrier (plist-get data :barrier))
-             (continue (plist-get data :continue))
-             (req-str (plist-get data :req-str)))
-        ;; stop if:
-        ;; - this is a barrier and there are already requests inflight
-        ;; - we wait on a continue
-        (when (or (and barrier eimap-outstanding-tags)
-                  eimap-continue-tag)
-          ;; we popped too soon
-          (push data eimap-req-queue)
-          (throw 'out nil))
-        (when barrier
-          (funcall barrier (plist-get data :cbdata)))
-        (when continue
-          (setq eimap-continue-tag tag))
-        (push (cons tag data) eimap-outstanding-tags)
-        (eimap-network-send req-str)))))
-
 (defun eimap-process-reply ()
   "Parse network reply and run protocol state machine."
   (let* ((reply (eimap-parse))
@@ -177,29 +191,6 @@ active."
        (setq data (funcall continue data cbdata))
        (setcdr tag-record (plist-put tag-data :cbdata cbdata))))))
 
-(defun eimap-process-data-reply (data)
-  "Handle an untagged data reply from the server."
-  (let ((method (plist-get data :method))
-        (resp-code (plist-get data :resp-code)))
-    (when resp-code
-      (eimap-dispatch-method resp-code data))
-    (eimap-dispatch-method method data)))
-
-(defun eimap-process-tag-reply (data)
-  "Handle a tagged reply from the server."
-  (let* ((tag (plist-get data :tag))
-         (tag-record (assoc-string tag eimap-outstanding-tags))
-         (tag-data (cdr tag-record))
-         (done-handler (plist-get tag-data :done))
-         (cbdata (plist-get tag-data :cbdata))
-         (resp-code (plist-get data :resp-code)))
-    (when resp-code
-      (eimap-dispatch-method resp-code data))
-    (when done-handler
-      (funcall done-handler data cbdata))
-    (setq eimap-outstanding-tags (delq tag-record eimap-outstanding-tags))
-    (eimap-process-req-queue)))
-
 (defun eimap-process-common-continue (data)
   "Send literal after server prompted us for continuation."
   (let* ((cont-strs (plist-get data :cont-strs))
@@ -213,5 +204,44 @@ active."
       ;; else no more tag: flush the queue
       (setq eimap-continue-tag nil)
       (eimap-process-req-queue))))
+
+(defun eimap-process-data-reply (data)
+  "Handle an untagged data reply from the server."
+  (let ((method (plist-get data :method))
+        (resp-code (plist-get data :resp-code)))
+    (when (or (eq resp-code 'CAPABILITY)
+              (eq method 'CAPABILITY))
+      (setq eimap-capabilities (plist-get data :capabilities)
+            eimap-auth-methods (plist-get data :auth)))
+    (when resp-code
+      (eimap-data-upcall resp-code data))
+    (when (eq method 'cond-state)
+      (case (plist-get data :state)
+        ('PREAUTH
+         (when (eq eimap-state 'connected)
+           (eimap-set-state 'authenticated)))
+        ('BYE
+         (message "server closing connection: %s" (plist-get data :text)))))
+    (eimap-data-upcall method data)))
+
+(defun eimap-process-tag-reply (data)
+  "Handle a tagged reply from the server."
+  (let* ((tag (plist-get data :tag))
+         (tag-record (assoc-string tag eimap-outstanding-tags))
+         (tag-data (cdr tag-record))
+         (done-handler (plist-get tag-data :done))
+         (cbdata (plist-get tag-data :cbdata))
+         (resp-code (plist-get data :resp-code)))
+    (when resp-code
+      (eimap-data-upcall resp-code data))
+    (when done-handler
+      (funcall done-handler data cbdata))
+    (setq eimap-outstanding-tags (delq tag-record eimap-outstanding-tags))
+    (eimap-process-req-queue)))
+
+(defun eimap-data-upcall (method data)
+  "Report data to the application."
+  (when eimap-data-upcall
+    (funcall eimap-data-upcall method data)))
 
 (provide 'eimap-connection)
