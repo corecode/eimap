@@ -25,6 +25,11 @@
                        :done 'eimap-auth-done
                        :cbdata cbdata)))))
 
+(defun eimap-authenticate-cb (data cbdata)
+  (when (null eimap-auth-methods)
+    (error "CAPABILITY did not return auth methods"))
+  (eimap-authenticate))
+
 (defun eimap-auth-steps (params data)
   "Continuation callback for AUTHENTICATE.  Returns NEW-DATA that gets
 passed in again in the next step."
