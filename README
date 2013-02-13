@@ -21,7 +21,17 @@
 
 ;;; REQUIREMENTS
 
+; If you use MELPA:
 ; (package-install 'dash)
+;
+; alternatively, using git submodules:
+;
+(when nil
+  (progn
+    (call-process "git" nil nil nil "submodule" "update" "--init")
+    (add-to-list 'load-path (concat default-directory "/dash"))
+    ) ;; <- point here + C-x C-e
+  )
 
 
 ;;; USAGE TEASER
