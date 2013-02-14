@@ -22,6 +22,7 @@
     (set (make-local-variable 'eimap-outstanding-tags) nil)
     (set (make-local-variable 'eimap-req-queue) nil)
     (set (make-local-variable 'eimap-tag) 0)
+    (set (make-local-variable 'eimap-recv-mark) nil)
     (let* ((coding-system-for-read 'binary)
            (coding-system-for-write 'binary)
            open-args process)
@@ -50,6 +51,7 @@
       (set-process-sentinel process 'eimap-sentinel)
       (eimap-set-state 'connected)
       ;; trigger parsing of greeting
+      (setq eimap-recv-mark (point-marker))
       (eimap-network-recv process "")
       (unless (eq eimap-state 'authenticated)
         (eimap-authenticate)))
@@ -183,9 +185,10 @@ active."
 defined amount of octets."
   (with-current-buffer (process-buffer process)
     (save-excursion
-      (goto-char (point-max))
+      (goto-char (process-mark process))
       (insert output)
       (set-marker (process-mark process) (point)))
+    (goto-char eimap-recv-mark)
     (while (eimap-network-reply-ready-p)
       (eimap-process-reply))))
 
@@ -216,6 +219,7 @@ defined amount of octets."
   (let* ((reply (eimap-parse))
          (type (plist-get reply :type))
          (params (plist-get reply :params)))
+    (setq eimap-recv-mark (point))
     (case type
       ('continue
        (eimap-process-continue-reply params))
