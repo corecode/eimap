@@ -50,7 +50,7 @@
                                        (pp-to-string data)
                                        (pp-to-string cbdata))))))))
 
-(eimap-define-method eimap-README default (ud data)
+(eimap-define-method eimap-README default (ud method data)
   "Catch-all method for unhandled data."
   (message "IMAP %s %s"
            method
