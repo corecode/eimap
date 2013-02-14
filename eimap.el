@@ -33,7 +33,7 @@
                        (plist-get data :unseen)
                        (plist-get data :messages))))
       (when (> (plist-get data :recent) 0)
-        (setq str (propertize str :bold t)))
+        (setq str (propertize str 'face '(:weight bold))))
       (insert str))))
 
 (eimap-define-method eimap default (buf method data)
