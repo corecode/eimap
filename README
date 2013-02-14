@@ -24,7 +24,8 @@
 (add-to-list 'load-path default-directory)
 
 (require 'cl)
-(require 'eimap)
+(require 'eimap-connection)
+(require 'eimap-dispatch)
 
 (eimap-declare-dispatch-table eimap-README)
 

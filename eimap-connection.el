@@ -1,4 +1,8 @@
 (require 'cl)
+(require 'eimap-auth)
+(require 'eimap-parse)
+(require 'eimap-generate)
+
 
 (defun* eimap-open (host &key (user (user-login-name)) (port "imap")
                          (ssl (member port '("imaps" "993" 993)))
