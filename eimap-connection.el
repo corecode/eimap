@@ -83,8 +83,9 @@ KEEP-BUFFER is nil."
     (eimap-close-1 t)))
 
 (defun eimap-set-state (new-state)
-  (setq eimap-state new-state)
-  (eimap-upcall 'connection-state (list :state new-state)))
+  (when (not (eq new-state eimap-state))
+    (setq eimap-state new-state)
+    (eimap-upcall 'connection-state (list :state new-state))))
 
 
 ;;;
