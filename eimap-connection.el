@@ -55,9 +55,32 @@
         (eimap-authenticate)))
     (current-buffer)))
 
+(defun eimap-close (conn &optional keep-buffer)
+  "Close connection CONN and remove associated buffer.  Keeps the
+buffer if KEEP-BUFFER is not nil."
+  (with-current-buffer conn
+    (if (not (memq eimap-state '(closing closed)))
+        (progn
+          (eimap-set-state 'closing)
+          (eimap-request '(:method LOGOUT)
+                         :cbdata keep-buffer
+                         :done (lambda (data keep-buffer)
+                                 (eimap-close-1 keep-buffer))))
+      (eimap-close-1 keep-buffer))))
+
+(defun eimap-close-1 (keep-buffer)
+  "Closes the network process and removes the buffer if
+KEEP-BUFFER is nil."
+  (eimap-set-state 'closed)
+  (let ((proc (get-buffer-process (current-buffer))))
+    (when proc
+      (delete-process proc)))
+  (when (not keep-buffer)
+     (kill-buffer)))
+
 (defun eimap-sentinel (conn state)
   (with-current-buffer (process-buffer conn)
-    (eimap-set-state 'disconnected)))
+    (eimap-close-1 t)))
 
 (defun eimap-set-state (new-state)
   (setq eimap-state new-state)
@@ -257,12 +280,12 @@ defined amount of octets."
          (done-handler (plist-get tag-data :done))
          (cbdata (plist-get tag-data :cbdata))
          (resp-code (plist-get data :resp-code)))
+    (setq eimap-outstanding-tags (delq tag-record eimap-outstanding-tags))
+    (eimap-process-req-queue)
     (when resp-code
       (eimap-upcall resp-code data))
     (when done-handler
-      (funcall done-handler data cbdata))
-    (setq eimap-outstanding-tags (delq tag-record eimap-outstanding-tags))
-    (eimap-process-req-queue)))
+      (funcall done-handler data cbdata))))
 
 (defun eimap-upcall (method data)
   "Report data to the application."
