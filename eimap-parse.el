@@ -44,7 +44,13 @@
                   response-tagged))
 
     (continue-req  :type 'continue
-                   :params (list "+" SP resp-text CRLF))
+                   :params (list "+"
+                                 ;; NON-STANDARD:
+                                 ;; Exchange does not send space for
+                                 ;; auth continuation.
+                                 (or (and SP resp-text)
+                                     (and :text `(-- "")))
+                                 CRLF))
 
     (response-tagged :type 'tag
                      :params (list :tag tag SP resp-cond-state CRLF))
@@ -142,7 +148,10 @@
                            (* SP search-return-data))
                       (and '"STATUS" SP
                            mailbox
-                           SP "(" status-att-list ")")
+                           SP "(" status-att-list ")"
+                           ;; NON-STANDARD:
+                           ;; Exchange trails STATUS replies with a space
+                           (opt SP))
                       (and 'EXISTS
                            :exists number SP "EXISTS")
                       (and 'RECENT
