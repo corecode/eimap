@@ -148,15 +148,14 @@
                       (and 'RECENT
                            :recent number SP "RECENT")))
 
-    (mailbox-list (list
-                   "("
-                   (opt :flags mbx-list-flags)
-                   ")" SP
-                   :mboxsep (or (and "\"" (substring QUOTED-CHAR)
-                                     `(str -- (eimap-parse-unquote-string str))
-                                     "\"")
-                                =nil)
-                   SP mailbox))
+    (mailbox-list "("
+                  (opt :flags mbx-list-flags)
+                  ")" SP
+                  :mboxsep (or (and "\"" (substring QUOTED-CHAR)
+                                    `(str -- (eimap-parse-unquote-string str))
+                                    "\"")
+                               =nil)
+                  SP mailbox)
 
     (mailbox :mailbox astring)
     (mbx-list-flags (list mbx-list-flag (* SP mbx-list-flag)))
