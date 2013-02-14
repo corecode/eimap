@@ -10,19 +10,28 @@
                          &aux (procname (format "*imap %s:%s*" host port)))
   "Open IMAP connection and set up buffer"
   (with-current-buffer (generate-new-buffer procname)
-    (set (make-local-variable 'eimap-state) nil)
-    (set (make-local-variable 'eimap-user) user)
-    (set (make-local-variable 'eimap-host) host)
-    (set (make-local-variable 'eimap-port) port)
-    (set (make-local-variable 'eimap-upcall) upcall)
-    (set (make-local-variable 'eimap-upcall-data) upcall-data)
-    (set (make-local-variable 'eimap-capabilities) nil)
-    (set (make-local-variable 'eimap-auth-methods) nil)
-    (set (make-local-variable 'eimap-continue-tag) nil)
-    (set (make-local-variable 'eimap-outstanding-tags) nil)
-    (set (make-local-variable 'eimap-req-queue) nil)
-    (set (make-local-variable 'eimap-tag) 0)
-    (set (make-local-variable 'eimap-recv-mark) nil)
+    (kill-all-local-variables)
+    (buffer-disable-undo)
+    (setq buffer-read-only t)
+    (dolist (var
+             `((eimap-user ,user)
+               (eimap-host ,host)
+               (eimap-port ,port)
+               (eimap-upcall ,upcall)
+               (eimap-upcall-data ,upcall-data)
+               (eimap-tag 0)
+               eimap-state
+               eimap-capabilities
+               eimap-auth-methods
+               eimap-continue-tag
+               eimap-outstanding-tags
+               eimap-req-queue
+               eimap-recv-mark))
+      (set (make-local-variable (if (listp var)
+                                    (nth 0 var)
+                                  var))
+           (and (listp var)
+                (nth 1 var))))
     (let* ((coding-system-for-read 'binary)
            (coding-system-for-write 'binary)
            open-args process)
@@ -186,7 +195,8 @@ defined amount of octets."
   (with-current-buffer (process-buffer process)
     (save-excursion
       (goto-char (process-mark process))
-      (insert output)
+      (let ((inhibit-read-only t))
+        (insert output))
       (set-marker (process-mark process) (point)))
     (goto-char eimap-recv-mark)
     (while (eimap-network-reply-ready-p)
