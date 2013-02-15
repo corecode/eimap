@@ -179,7 +179,7 @@ probably you don't want to use this."
   "Send IMAP data.  Must be called with the process buffer
 active."
   ;; XXX this reorders multiple overlays at point
-  (let ((outovr (make-overlay (1- (point)) (point))))
+  (let ((outovr (make-overlay (1- (point-max)) (point-max))))
     (overlay-put outovr 'after-string
                  (propertize output 'face '(:foreground "red")))
     (process-send-string (get-buffer-process (current-buffer)) output)))
