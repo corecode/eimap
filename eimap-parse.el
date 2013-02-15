@@ -84,16 +84,11 @@
                      (and '"BADCHARSET"
                           :charsets (list (opt SP "(" astring
                                                (* SP astring) ")")))
-                     (and '"CAPABILITY"
-                          capability-data-1)
-                     (and '"PERMANENTFLAGS" SP
-                          :flags flag-list)
-                     (and '"UIDNEXT" SP
-                          :uidnext number)
-                     (and '"UIDVALIDITY" SP
-                          :uidvalidity number)
-                     (and '"UNSEEN" SP
-                          :unseen number)
+                     (and '"CAPABILITY" capability-data-1)
+                     (and '"PERMANENTFLAGS" SP :flags flag-list)
+                     (and '"UIDNEXT" SP :uidnext number)
+                     (and '"UIDVALIDITY" SP :uidvalidity number)
+                     (and '"UNSEEN" SP :unseen number)
                      (and atom
                           (opt :data SP
                                (substring (+ (and (not "]")
@@ -103,9 +98,9 @@
     (capability-data :method '"CAPABILITY"
                      capability-data-1)
     (capability-data-1 :capabilities
-                       (list (+ SP ;; (or (and "AUTH=" (cons 'AUTH
-                                ;; atom)))
-                                atom))
+                       (list (+ SP atom))
+                       ;; upcase capabilities and split into
+                       ;; capability and auth methods.
                        `(l --
                            (delq nil (mapcar
                                       (lambda (e)
@@ -120,46 +115,33 @@
                                       l))))
 
     (flag-list "(" (list (opt flag (* SP flag))) ")")
-    (flag (or ;; '"\\Answered"
-           ;; '"\\Flagged"
-           ;; '"\\Deleted"
-           ;; '"\\Seen"
-           ;; '"\\Draft"
-           ;; '"\\Recent"
-           atom
-           flag-extension))
-    (flag-extension "\\" atom `(s -- (downcase (concat "\\" s))))
+    (flag (or atom
+              ;; We treat all flags as flag-extension
+              flag-extension))
+    (flag-extension "\\" atom
+                    ;; normalize flags to simplify processing
+                    `(s -- (downcase (concat "\\" s))))
 
 
 ;;; mailbox
 
     (mailbox-data :method
-                  (or (and '"FLAGS" SP
-                           :flags flag-list)
-                      (and '"LIST" SP
-                           mailbox-list)
-                      (and '"LSUB" SP
-                           mailbox-list)
-                      (and '"SEARCH"
-                           :result (list (* SP number)))
+                  (or (and '"FLAGS" SP :flags flag-list)
+                      (and '"LIST" SP mailbox-list)
+                      (and '"LSUB" SP mailbox-list)
+                      (and '"SEARCH" :result (list (* SP number)))
                       (and '"ESEARCH"
                            (opt search-correlator)
                            (opt :uid 't SP "UID")
                            (* SP search-return-data))
-                      (and '"STATUS" SP
-                           mailbox
-                           SP "(" status-att-list ")"
+                      (and '"STATUS" SP mailbox SP "(" status-att-list ")"
                            ;; NON-STANDARD:
                            ;; Exchange trails STATUS replies with a space
                            (opt SP))
-                      (and 'EXISTS
-                           :exists number SP "EXISTS")
-                      (and 'RECENT
-                           :recent number SP "RECENT")))
+                      (and 'EXISTS :exists number SP "EXISTS")
+                      (and 'RECENT :recent number SP "RECENT")))
 
-    (mailbox-list "("
-                  (opt :flags mbx-list-flags)
-                  ")" SP
+    (mailbox-list "(" (opt :flags mbx-list-flags) ")" SP
                   :mboxsep (or (and "\"" (substring QUOTED-CHAR)
                                     `(str -- (eimap-parse-unquote-string str))
                                     "\"")
@@ -168,11 +150,9 @@
 
     (mailbox :mailbox astring)
     (mbx-list-flags (list mbx-list-flag (* SP mbx-list-flag)))
-    (mbx-list-flag (or ;; '"\\Noinferiors"
-                    ;; '"\\Noselect"
-                    ;; '"\\Marked"
-                    ;; '"\\Unmarked"
-                    flag-extension))
+    (mbx-list-flag flag-extension
+                   ;; we treat all flags as flag-extension.
+                   )
 
     (search-correlator :tag SP "(" "TAG" SP string ")")
     (search-return-data (or (and :min "MIN" SP number)
@@ -183,7 +163,8 @@
                             (list number))
                         (* "," (or seq-range
                                    (list number))))
-                  `(l -- (apply #'nconc l)))
+                  ;; collapse the expanded lists into one and sort
+                  `(l -- (sort (apply #'nconc l) #'<)))
     (seq-range  number ":" number
                 ;; directly expand
                 `(from to -- (if (< from to)
@@ -200,10 +181,8 @@
 
 
 ;;; message data
-    (message-data (or (and :method 'EXPUNGE
-                           :msgid number SP "EXPUNGE")
-                      (and :method 'FETCH
-                           :msgid number SP "FETCH" SP msg-att)))
+    (message-data (or (and :method 'EXPUNGE :msgid number SP "EXPUNGE")
+                      (and :method 'FETCH :msgid number SP "FETCH" SP msg-att)))
     (msg-att "(" (or msg-att-dynamic
                      msg-att-static)
              (* SP (or msg-att-dynamic
@@ -228,12 +207,11 @@
     (section-spec (or section-msgtext
                       (and :part section-part (opt "." section-text))))
     (section-part number (* "." number))
-    (section-msgtext :text
-                     (or '"HEADER"
-                         (and (or '"HEADER.FIELDS"
-                                  '"HEADER.FIELDS.NOT")
-                              SP :header-list header-list)
-                         '"TEXT"))
+    (section-msgtext :text (or '"HEADER"
+                               (and (or '"HEADER.FIELDS"
+                                        '"HEADER.FIELDS.NOT")
+                                    SP :header-list header-list)
+                               '"TEXT"))
     (section-text (or section-msgtext
                       :text '"MIME"))
     (header-list "(" (list astring (* SP astring)) ")")
