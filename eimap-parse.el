@@ -229,7 +229,10 @@
                :in-reply-to nstring SP
                :message-id nstring)
               ")")
-    (env-addr-list (or (and "(" (list (+ address)) ")")
+    (env-addr-list (or (and "(" (list (+ address
+                                         ;; NON-STANDARD:
+                                         ;; Exchange occasionally inserts spaces
+                                         (opt SP))) ")")
                        =nil))
     (address "("
              (list
