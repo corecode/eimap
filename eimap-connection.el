@@ -143,7 +143,8 @@ probably you don't want to use this."
     (setq tag-data (cons tag data))
     ;; add to request queue and kick it
     (add-to-list 'eimap-req-queue data t)
-    (eimap-process-req-queue)))
+    (eimap-process-req-queue)
+    tag))
 
 (defun eimap-new-tag ()
   "Generate new IMAP tag"
@@ -306,5 +307,10 @@ defined amount of octets."
   "Report data to the application."
   (when eimap-upcall
     (funcall eimap-upcall eimap-upcall-data method data)))
+
+
+(defun eimap-capability (capa)
+  "Check whether CAPA is supported by the server."
+  (member capa eimap-capabilities))
 
 (provide 'eimap-connection)

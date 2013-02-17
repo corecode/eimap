@@ -16,7 +16,7 @@
                            :steps steps))
              (req (list :method 'AUTHENTICATE
                         :auth-mech (sasl-mechanism-name mech))))
-        (when (member "SASL-IR" eimap-capabilities)
+        (when (eimap-capability "SASL-IR")
           (let ((reply-data (eimap-auth-next-step "" cbdata)))
             (setq req (plist-put req :auth-token (car reply-data)))
             (setq cbdata (cdr reply-data))))
