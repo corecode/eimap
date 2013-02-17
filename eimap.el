@@ -29,6 +29,7 @@
 
 (defstruct eimap-data
   connection
+  current-mailbox
   folder-list
   message-list)
 
@@ -75,25 +76,49 @@
       (eimap-quit)
     (error nil)))
 
+(defun eimap-select (mailbox)
+  (eimap-request* (eimap-data-connection eimap-data)
+                  `(:method SELECT :mailbox ,mailbox)
+                  :cbdata (list eimap-data mailbox)
+                  :barrier 'eimap-select-start
+                  :done 'eimap-select-done))
+
+(defun eimap-select-start (cbdata)
+  (destructuring-bind (eimap-data mailbox) cbdata
+    (setf (eimap-data-current-mailbox eimap-data) mailbox))
+  cbdata)
+
+(defun eimap-select-done (respdata cbdata)
+  (destructuring-bind (eimap-data mailbox) cbdata
+    (with-current-buffer (eimap-data-message-list eimap-data)
+      (let ((inhibit-read-only t))
+        (erase-buffer))
+      (eimap-request* (eimap-data-connection eimap-data)
+                      `(:method FETCH
+                                :ids (:from 1 :to *)
+                                :attr (ENVELOPE FLAGS UID BODYSTRUCTURE))))))
+
 (defun eimap-visit-item ()
   (interactive)
   (let ((data (get-text-property (point) :eimap)))
-    (eimap-request* (eimap-data-connection eimap-data)
-                    `(:method SELECT :mailbox ,(plist-get data :mailbox)))))
+    (eimap-select (plist-get data :mailbox))))
 
 (eimap-declare-dispatch-table eimap)
 
-(eimap-define-method eimap connection-state (ed data)
+(eimap-define-method eimap connection-state (eimap-data data)
   (when (eq 'authenticated (plist-get data :state))
+    (eimap-select "INBOX")
     (eimap-request '(:method LSUB :mailbox "" :pattern "*"))))
 
-(eimap-define-method eimap LSUB (ed data)
-  (eimap-request `(:method STATUS
-                           :mailbox ,(plist-get data :mailbox)
-                           :attr (MESSAGES RECENT UNSEEN))))
+(eimap-define-method eimap LSUB (eimap-data data)
+  (let ((mailbox (plist-get data :mailbox)))
+    (unless (equal mailbox (eimap-data-current-mailbox eimap-data))
+      (eimap-request `(:method STATUS
+                               :mailbox ,mailbox
+                               :attr (MESSAGES RECENT UNSEEN))))))
 
-(eimap-define-method eimap STATUS (ed data)
-  (with-current-buffer (eimap-data-folder-list ed)
+(eimap-define-method eimap STATUS (eimap-data data)
+  (with-current-buffer (eimap-data-folder-list eimap-data)
     (let ((str (propertize
                 (format "%s (%d/%d)\n"
                         (plist-get data :mailbox)
@@ -101,12 +126,49 @@
                         (plist-get data :messages))
                 :eimap data)))
       (when (> (plist-get data :recent) 0)
-        (setq str (propertize str 'face '(:weight bold))))
+        (setq str (propertize str 'face 'bold)))
       (let ((inhibit-read-only t))
         (insert str)))))
 
-(eimap-define-method eimap default (ed method data)
+(eimap-define-method eimap FETCH (eimap-data data)
+  (with-current-buffer (eimap-data-message-list eimap-data)
+    (let (face)
+      (when (member "\\seen" (plist-get data :flags))
+        (add-to-list 'face 'shadow))
+      (when (member "\\deleted" (plist-get data :flags))
+        (add-to-list 'face '(:strike-through t)))
+      (let ((str (propertize
+                  (concat
+                   (truncate-string-to-width
+                    (or (multi-plist-get data :envelope :subject)
+                        "(none)")
+                    50 0 ?  "\u2026")
+                   " "
+                   (truncate-string-to-width
+                    (eimap-address-string data :from)
+                    15 0 ?  "\u2026")
+                   "\n")
+                  :eimap data
+                  'face face)))
+        (let ((inhibit-read-only t))
+          (insert str))))))
+
+(eimap-define-method eimap default (eimap-data method data)
   (message "IMAP %s %s"
            method (pp-to-string data)))
+
+(defun eimap-address-string (data field)
+  (let* ((fdata (multi-plist-get data :envelope field))
+         (first (car fdata)))
+    (or (plist-get first :name)
+        (concat (or (plist-get first :mailbox) "(none)")
+                "@"
+                (or (plist-get first :host) "(none)")))))
+
+(defun multi-plist-get (plist &rest keys)
+  (mapcar (lambda (k)
+            (setq plist (plist-get plist k)))
+          keys)
+  plist)
 
 (provide 'eimap)
