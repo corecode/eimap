@@ -104,7 +104,7 @@
  ;; and `data' is the corresponding response data.  For example,
  ;; `:upcall' might be called with:
  ;;
- ;; ("o hi" 'FETCH (:msgid 3 :flags ("\\seen" "\\answered") :uid 667)
+ ;; ("o hi" 'FETCH (:msgid 3 :flags ("\\seen" "\\answered") :uid 667))
  :upcall (eimap-create-dispatch eimap-README)
  :upcall-data "o hi")
 
