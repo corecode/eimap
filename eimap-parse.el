@@ -286,7 +286,7 @@
                               (opt SP body-fld-loc
                                    (* SP body-extension)))))
 
-    (body-fld-md5 :md5 string)
+    (body-fld-md5 :md5 nstring)
     (body-fld-dsp :disposition (or (cons "(" string SP body-fld-param ")")
                                    =nil))
     (body-fld-lang :lang (or =nil
