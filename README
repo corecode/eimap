@@ -18,18 +18,83 @@
 ; yet, it can request the server to send this data, using the
 ; `eimap-request' method (see example below).
 
+;;; USING THE APPLICATION
 
-;;; USAGE TEASER
+; (add-to-list 'load-path default-directory)
+;
+; (require 'eimap)
+;
+; (eimap
+;  "0x2c.org" :user "2"
+;  ;; default is IMAP+STARTTLS.
+;  ;; pass :port "imaps" for SSL connection to port 993
+;  )
+;
+
+
+;;; USING THE BACKEND LIBRARY
 
 (add-to-list 'load-path default-directory)
-
 (require 'eimap)
 
-(eimap
- "0x2c.org" :user "2"
- ;; default is IMAP+STARTTLS.
- ;; pass :port "imaps" for SSL connection to port 993
-)
+;; this table will dispatch all the incoming messages
+;;
+(eimap-declare-dispatch-table eimap-README)
+
+;; upcalls are passed the `upcall-data' supplied to `eimap-open' and a
+;; plist from the parsed message.  `eimap-parse.el' contains the
+;; formal grammar and self-documents the fields of each message.
+;;
+;; the upcall is called with the eimap connection buffer active
+;;
+(eimap-define-method eimap-README connection-state (upcall-data data)
+  ;; connection-state is issued when the state changes.  Possible
+  ;; `:state's are `connecting', `connected', `authenticating',
+  ;; `authenticated', and `closed'.
+  (when (eq 'authenticated (plist-get data :state))
+    ;; `eimap-request' has to be called with the eimap connection
+    ;; buffer active.  use `eimap-request*' to pass the connection
+    ;; object explicitly.
+    ;;
+    ;; `eimap-request' takes a request element; see
+    ;; `eimap-generate.el' for the self-documenting formal grammar.
+    ;;
+    ;; it also takes a `:cbdata' callback data argument that will be
+    ;; passed to the `:barrier' and `:done' callbacks.  There is no
+    ;; data callback, because replies generally can not be associated
+    ;; with the originating requests.  The presence of a `:barrier'
+    ;; also drains the request stream before the request is issued.
+    (eimap-request '(:method SELECT :mailbox "INBOX")
+                   :cbdata upcall-data
+                   :done (lambda (respdata cbdata)
+                           ;; now that the SELECT is done, we can
+                           ;; sequence the FETCH.  Maybe there should
+                           ;; be a way to add a tail barrier?
+                           (eimap-request '(:method FETCH
+                                                    ;; `:to' can be a
+                                                    ;; number or `*'.
+                                                    :ids (:from 1 :to 5)
+                                                    :attr (ENVELOPE FLAGS UID)))))))
+
+
+;; Depending on the server, there will be more or less unsolicited
+;; data.  EXISTS is a mandatory response to SELECT.
+(eimap-define-method eimap-README EXISTS (upcall-data data)
+  (message "This mailbox has %d messages" (plist-get data :exists)))
+
+;; The server may also send status responses.  All status responses
+;; (`resp-text-code') are converted to their own upcalls.
+(eimap-define-method eimap-README UIDVALIDITY (upcall-data data)
+  (message "This mailbox UID validity is %d" (plist-get data :uidvalidity)))
+
+;; this upcall will be issued for every FETCH response
+(eimap-define-method eimap-README FETCH (upcall-data data)
+  (message "FETCH returned: %s" (pp-to-string data)))
+
+(eimap-open "0x2c.org" :user "2"
+            :upcall-data "o hi"
+            :upcall (eimap-create-dispatch eimap-README))
+
 
 ;; check out (switch-to-buffer-other-window "*Messages*")
 ;; that's where all the parsed data arrived
