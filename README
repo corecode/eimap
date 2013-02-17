@@ -91,9 +91,22 @@
 (eimap-define-method eimap-README FETCH (upcall-data data)
   (message "FETCH returned: %s" (pp-to-string data)))
 
-(eimap-open "0x2c.org" :user "2"
-            :upcall-data "o hi"
-            :upcall (eimap-create-dispatch eimap-README))
+(eimap-open
+ "0x2c.org" :user "2"
+ ;; `:upcall' is where it's at.  All incoming data (and connection
+ ;; state change) are communicated via `:upcall'.  If you want to use
+ ;; the automatic dispatch, just use `eimap-create-dispatch' to do the
+ ;; work for you.
+ ;;
+ ;; Otherwise, pass a function that takes (upcall-data method data) as
+ ;; arguments.  `upcall-data' is what you pass in `:upcall-data';
+ ;; `method' is the IMAP response `:method' (see `eimap-parse.el'),
+ ;; and `data' is the corresponding response data.  For example,
+ ;; `:upcall' might be called with:
+ ;;
+ ;; ("o hi" 'FETCH (:msgid 3 :flags ("\\seen" "\\answered") :uid 667)
+ :upcall (eimap-create-dispatch eimap-README)
+ :upcall-data "o hi")
 
 
 ;; check out (switch-to-buffer-other-window "*Messages*")
