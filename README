@@ -47,11 +47,11 @@
 ;;
 ;; the upcall is called with the eimap connection buffer active
 ;;
-(eimap-define-method eimap-README connection-state (upcall-data data)
+(eimap-define-method eimap-README connection-state (upcall-data state-data)
   ;; connection-state is issued when the state changes.  Possible
   ;; `:state's are `connecting', `connected', `authenticating',
   ;; `authenticated', and `closed'.
-  (when (eq 'authenticated (plist-get data :state))
+  (when (eq 'authenticated (plist-get state-data :state))
     ;; `eimap-request' has to be called with the eimap connection
     ;; buffer active.  use `eimap-request*' to pass the connection
     ;; object explicitly.
@@ -64,32 +64,61 @@
     ;; data callback, because replies generally can not be associated
     ;; with the originating requests.  The presence of a `:barrier'
     ;; also drains the request stream before the request is issued.
-    (eimap-request '(:method SELECT :mailbox "INBOX")
-                   :cbdata upcall-data
-                   :done (lambda (respdata cbdata)
-                           ;; now that the SELECT is done, we can
-                           ;; sequence the FETCH.  Maybe there should
-                           ;; be a way to add a tail barrier?
-                           (eimap-request '(:method FETCH
-                                                    ;; `:to' can be a
-                                                    ;; number or `*'.
-                                                    :ids (:from 1 :to 5)
-                                                    :attr (ENVELOPE FLAGS UID)))))))
+    (eimap-request
+     '(:method SELECT :mailbox "INBOX")
+     :cbdata upcall-data
+     :done (lambda (respdata cbdata)
+             ;; now that the SELECT is done, we can
+             ;; sequence the FETCH.  Maybe there should
+             ;; be a way to add a tail barrier?
+             (eimap-request '(:method FETCH
+                                      ;; `:to' can be a
+                                      ;; number or `*'.
+                                      :ids (:from 1 :to *)
+                                      :attr (FLAGS UID)))))))
 
 
 ;; Depending on the server, there will be more or less unsolicited
 ;; data.  EXISTS is a mandatory response to SELECT.
-(eimap-define-method eimap-README EXISTS (upcall-data data)
-  (message "This mailbox has %d messages" (plist-get data :exists)))
+(eimap-define-method eimap-README EXISTS (upcall-data imap-data)
+  (message "This mailbox has %d messages" (plist-get imap-data :exists)))
 
 ;; The server may also send status responses.  All status responses
 ;; (`resp-text-code') are converted to their own upcalls.
-(eimap-define-method eimap-README UIDVALIDITY (upcall-data data)
-  (message "This mailbox UID validity is %d" (plist-get data :uidvalidity)))
+(eimap-define-method eimap-README UIDVALIDITY (upcall-data imap-data)
+  ;; in reality, we'd have to empty caches if the UIDVALIDITY changed.
+  (message "This mailbox UID validity is %d" (plist-get imap-data :uidvalidity)))
 
 ;; this upcall will be issued for every FETCH response
-(eimap-define-method eimap-README FETCH (upcall-data data)
-  (message "FETCH returned: %s" (pp-to-string data)))
+;;
+;; let's assume we're building something like offlineIMAP, just to
+;; illustrate how async requests would work with overlapping requests.
+;;
+;; for a real application, you'd collect uids first and issue several
+;; per request to reduce the protocol overhead.
+(eimap-define-method eimap-README FETCH (upcall-data imap-data)
+  ;; usually, you'd update local state with this information and then
+  ;; issue new requests based on local state.
+  (when (plist-get imap-data :flags)
+    (message "flags for uid %d (msgid %d) are %s"
+             (plist-get imap-data :uid)
+             (plist-get imap-data :msgid)
+             (pp-to-string (plist-get imap-data :flags))))
+  ;; now, say we decide that this message is new and its body needs
+  ;; to be fetched.  for ease of demonstration, we'll just fetch the
+  ;; bodystructure instead.
+  (if (plist-get imap-data :bodystructure)
+      ;; jolly good, we already got the data.
+      (message "message uid %d has structure %s"
+               (plist-get imap-data :uid)
+               (pp-to-string (plist-get imap-data :bodystructure)))
+    ;; no bodystructure present, let's fetch it.
+    ;; this just simulates us picking some messages
+    (when (eq 1 (% (plist-get imap-data :msgid) 30))
+      (eimap-request `(:method FETCH
+                               :uid t
+                               :ids ,(plist-get imap-data :uid)
+                               :attr (UID BODYSTRUCTURE))))))
 
 (eimap-open
  "0x2c.org" :user "2"
