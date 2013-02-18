@@ -553,7 +553,12 @@ Note: a PE can't \"call\" rules by name."
    ((stringp form)
     (peg-normalize `(and ',(intern form) ,form)))
    ((symbolp form)
-    `(action (equal ',form (peg-pop-current-list))))
+    `(action
+      (let ((on-stack (peg-pop-current-list)))
+        ;; (message "trying to match %s to %s"
+        ;;          (pp-to-string on-stack)
+        ;;          (pp-to-string ',form))
+        (equal ',form on-stack))))
    (t
     (error "Invalid form passed to quote %S" form))))
 
@@ -763,6 +768,7 @@ Note: a PE can't \"call\" rules by name."
   `(let ((current-list (peg-pop-list-from-stack)))
      (when (and (keywordp (car current-list))
                 (plist-member current-list ,exp))
+       ;; (message "matched %s" ,exp)
        (let (new-list)
          (while (not (equal ,exp (car current-list)))
            (let ((key (pop current-list))
