@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2013  Simon Schubert
 
-;; Author: Simon Schubert <2@0x2c.org
+;; Author: Simon Schubert <2@0x2c.org>
 ;; Created: 20130116
 
 ;; This file is not part of GNU Emacs.
