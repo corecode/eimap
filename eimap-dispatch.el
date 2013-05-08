@@ -1,3 +1,27 @@
+;;; eimap-dispatch.el ---
+
+;; Copyright (C) 2013  Simon Schubert
+
+;; Author: Simon Schubert <2@0x2c.org
+;; Created: 20130116
+
+;; This file is not part of GNU Emacs.
+
+;; This file is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation; either version 3, or (at your option)
+;; any later version.
+
+;; This file is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; For a full copy of the GNU General Public License
+;; see <http://www.gnu.org/licenses/>.
+
+;;; Code:
+
 (eval-and-compile
   (defun eimap-method-table-name (table-name)
     (intern (format "eimap-method-table-%s" table-name))))
@@ -30,3 +54,4 @@ ARGS should be (upcall-data data)."
                (funcall handler upcall-data method data))))))))
 
 (provide 'eimap-dispatch)
+;;; eimap-dispatch.el ends here

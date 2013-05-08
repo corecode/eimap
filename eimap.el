@@ -1,3 +1,46 @@
+;;; eimap.el --- imap processing using a streaming data model
+
+;; Copyright (C) 2013  Simon Schubert
+
+;; Author: Simon Schubert <2@0x2c.org
+;; Created: 20130116
+
+;; This file is not part of GNU Emacs.
+
+;; This file is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation; either version 3, or (at your option)
+;; any later version.
+
+;; This file is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; For a full copy of the GNU General Public License
+;; see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; eimap is an experiment to approach IMAP processing from a new
+;; angle.
+
+;; The protocol parser and generator are both formally generated from
+;; grammars.
+
+;; Instead of using a request-reply approach (which does not work well
+;; with IMAP), eimap uses a streaming data model:
+
+;; Data from the server is automatically parsed into usable lisp data
+;; structures and directly handed to a handler for the incoming data
+;; (not shown in the sample code below).
+
+;; If the application requires other data that has not been streamed in
+;; yet, it can request the server to send this data, using the
+;; `eimap-request' method (see example below).
+
+;;; Code:
+
 (require 'cl)
 (require 'eimap-connection)
 (require 'eimap-dispatch)
@@ -172,3 +215,4 @@
   plist)
 
 (provide 'eimap)
+;;; eimap.el ends here
